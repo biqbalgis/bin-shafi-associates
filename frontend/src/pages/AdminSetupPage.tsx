@@ -1,0 +1,413 @@
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Divider,
+  MenuItem,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { type ReactNode, useEffect, useState } from "react";
+
+import {
+  createAircraft,
+  createAirport,
+  createClient,
+  createFlightOption,
+  createFuelCategory,
+  createFuelType,
+  createRouteOption,
+} from "../api/adminSetup";
+import {
+  fetchAircrafts,
+  fetchAirports,
+  fetchClients,
+  fetchFlightOptions,
+  fetchFuelCategories,
+  fetchFuelTypes,
+  fetchRouteOptions,
+} from "../api/dropdowns";
+import type { Aircraft, Airport, Client, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
+
+function SectionCard({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6">{title}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {description}
+            </Typography>
+          </Box>
+          {children}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function AdminSetupPage() {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [aircrafts, setAircrafts] = useState<Aircraft[]>([]);
+  const [airports, setAirports] = useState<Airport[]>([]);
+  const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
+  const [fuelCategories, setFuelCategories] = useState<FuelCategory[]>([]);
+  const [flights, setFlights] = useState<FlightOption[]>([]);
+  const [routes, setRoutes] = useState<RouteOption[]>([]);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [clientForm, setClientForm] = useState({
+    name: "",
+    code: "",
+    contact_email: "",
+    contact_phone: "",
+    address: "",
+  });
+  const [aircraftForm, setAircraftForm] = useState({
+    client: "",
+    registration_no: "",
+    aircraft_model: "",
+    manufacturer: "",
+  });
+  const [airportForm, setAirportForm] = useState({
+    code: "",
+    name: "",
+    city: "",
+    country: "",
+  });
+  const [fuelTypeForm, setFuelTypeForm] = useState({ name: "", description: "" });
+  const [fuelCategoryForm, setFuelCategoryForm] = useState({ name: "", description: "" });
+  const [flightForm, setFlightForm] = useState({ code: "", description: "" });
+  const [routeForm, setRouteForm] = useState({ name: "", description: "" });
+
+  async function reloadData() {
+    try {
+      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData] =
+        await Promise.all([
+          fetchClients(),
+          fetchAircrafts(),
+          fetchAirports(),
+          fetchFuelTypes(),
+          fetchFuelCategories(),
+          fetchFlightOptions(),
+          fetchRouteOptions(),
+        ]);
+
+      setClients(clientsData);
+      setAircrafts(aircraftsData);
+      setAirports(airportsData);
+      setFuelTypes(fuelTypesData);
+      setFuelCategories(fuelCategoriesData);
+      setFlights(flightsData);
+      setRoutes(routesData);
+    } catch {
+      setMessage({ type: "error", text: "Failed to load setup data." });
+    }
+  }
+
+  useEffect(() => {
+    void reloadData();
+  }, []);
+
+  async function handleAction(action: () => Promise<unknown>, successText: string) {
+    setMessage(null);
+    try {
+      await action();
+      setMessage({ type: "success", text: successText });
+    } catch {
+      setMessage({ type: "error", text: "Request failed. Check required fields and uniqueness." });
+    }
+  }
+
+  return (
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="h4">Admin Setup</Typography>
+        <Typography color="text.secondary">
+          Add master data for order creation. These values appear in Create Order dropdowns.
+        </Typography>
+      </Box>
+
+      {message && <Alert severity={message.type}>{message.text}</Alert>}
+
+      <SectionCard title="Clients" description="Create client companies first.">
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
+          <TextField label="Client Name" value={clientForm.name} onChange={(e) => setClientForm((v) => ({ ...v, name: e.target.value }))} fullWidth />
+          <TextField label="Client Code" value={clientForm.code} onChange={(e) => setClientForm((v) => ({ ...v, code: e.target.value }))} fullWidth />
+          <TextField label="Contact Email" value={clientForm.contact_email} onChange={(e) => setClientForm((v) => ({ ...v, contact_email: e.target.value }))} fullWidth />
+          <TextField label="Contact Phone" value={clientForm.contact_phone} onChange={(e) => setClientForm((v) => ({ ...v, contact_phone: e.target.value }))} fullWidth />
+          <TextField label="Address" value={clientForm.address} onChange={(e) => setClientForm((v) => ({ ...v, address: e.target.value }))} fullWidth multiline minRows={2} />
+        </Box>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createClient(clientForm);
+              setClientForm({ name: "", code: "", contact_email: "", contact_phone: "", address: "" });
+              await reloadData();
+            }, "Client created.")
+          }
+        >
+          Add Client
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Aircraft" description="Each aircraft must belong to a client.">
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
+          <TextField
+            label="Client"
+            select
+            value={aircraftForm.client}
+            onChange={(e) => setAircraftForm((v) => ({ ...v, client: e.target.value }))}
+            fullWidth
+          >
+            {clients.map((client) => (
+              <MenuItem key={client.id} value={client.id}>
+                {client.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField label="Registration No" value={aircraftForm.registration_no} onChange={(e) => setAircraftForm((v) => ({ ...v, registration_no: e.target.value }))} fullWidth />
+          <TextField label="Aircraft Model" value={aircraftForm.aircraft_model} onChange={(e) => setAircraftForm((v) => ({ ...v, aircraft_model: e.target.value }))} fullWidth />
+          <TextField label="Manufacturer" value={aircraftForm.manufacturer} onChange={(e) => setAircraftForm((v) => ({ ...v, manufacturer: e.target.value }))} fullWidth />
+        </Box>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createAircraft({ ...aircraftForm, client: Number(aircraftForm.client) });
+              setAircraftForm({ client: "", registration_no: "", aircraft_model: "", manufacturer: "" });
+              await reloadData();
+            }, "Aircraft created.")
+          }
+        >
+          Add Aircraft
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Airport / Route Base" description="Airports are used directly in order dropdowns.">
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
+          <TextField label="Airport Code" value={airportForm.code} onChange={(e) => setAirportForm((v) => ({ ...v, code: e.target.value }))} fullWidth />
+          <TextField label="Airport Name" value={airportForm.name} onChange={(e) => setAirportForm((v) => ({ ...v, name: e.target.value }))} fullWidth />
+          <TextField label="City" value={airportForm.city} onChange={(e) => setAirportForm((v) => ({ ...v, city: e.target.value }))} fullWidth />
+          <TextField label="Country" value={airportForm.country} onChange={(e) => setAirportForm((v) => ({ ...v, country: e.target.value }))} fullWidth />
+        </Box>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createAirport(airportForm);
+              setAirportForm({ code: "", name: "", city: "", country: "" });
+              await reloadData();
+            }, "Airport created.")
+          }
+        >
+          Add Airport
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Fuel Type" description="Populate fuel type dropdown.">
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField label="Fuel Type Name" value={fuelTypeForm.name} onChange={(e) => setFuelTypeForm((v) => ({ ...v, name: e.target.value }))} fullWidth />
+          <TextField label="Description" value={fuelTypeForm.description} onChange={(e) => setFuelTypeForm((v) => ({ ...v, description: e.target.value }))} fullWidth />
+        </Stack>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createFuelType(fuelTypeForm);
+              setFuelTypeForm({ name: "", description: "" });
+              await reloadData();
+            }, "Fuel type created.")
+          }
+        >
+          Add Fuel Type
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Fuel Category" description="Populate fuel category dropdown.">
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField label="Fuel Category Name" value={fuelCategoryForm.name} onChange={(e) => setFuelCategoryForm((v) => ({ ...v, name: e.target.value }))} fullWidth />
+          <TextField label="Description" value={fuelCategoryForm.description} onChange={(e) => setFuelCategoryForm((v) => ({ ...v, description: e.target.value }))} fullWidth />
+        </Stack>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createFuelCategory(fuelCategoryForm);
+              setFuelCategoryForm({ name: "", description: "" });
+              await reloadData();
+            }, "Fuel category created.")
+          }
+        >
+          Add Fuel Category
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Flight" description="Populate flight dropdown for order creation.">
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField label="Flight Code" value={flightForm.code} onChange={(e) => setFlightForm((v) => ({ ...v, code: e.target.value }))} fullWidth />
+          <TextField label="Description" value={flightForm.description} onChange={(e) => setFlightForm((v) => ({ ...v, description: e.target.value }))} fullWidth />
+        </Stack>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createFlightOption(flightForm);
+              setFlightForm({ code: "", description: "" });
+              await reloadData();
+            }, "Flight added.")
+          }
+        >
+          Add Flight
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Route" description="Populate route dropdown for order creation.">
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+          <TextField label="Route Name" value={routeForm.name} onChange={(e) => setRouteForm((v) => ({ ...v, name: e.target.value }))} fullWidth />
+          <TextField label="Description" value={routeForm.description} onChange={(e) => setRouteForm((v) => ({ ...v, description: e.target.value }))} fullWidth />
+        </Stack>
+        <Button
+          variant="contained"
+          onClick={() =>
+            void handleAction(async () => {
+              await createRouteOption(routeForm);
+              setRouteForm({ name: "", description: "" });
+              await reloadData();
+            }, "Route added.")
+          }
+        >
+          Add Route
+        </Button>
+      </SectionCard>
+
+      <SectionCard title="Created Data" description="All active records currently available for dropdowns.">
+        <Stack direction="row" justifyContent="flex-end">
+          <Button variant="outlined" onClick={() => void reloadData()}>
+            Refresh Data
+          </Button>
+        </Stack>
+
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" } }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Clients ({clients.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {clients.length === 0 && <Typography color="text.secondary">No clients yet.</Typography>}
+                {clients.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.name} ({item.code})
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Aircrafts ({aircrafts.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {aircrafts.length === 0 && <Typography color="text.secondary">No aircrafts yet.</Typography>}
+                {aircrafts.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.registration_no} / {item.aircraft_model} / {item.client_name}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Airports ({airports.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {airports.length === 0 && <Typography color="text.secondary">No airports yet.</Typography>}
+                {airports.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.code} / {item.name}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Fuel Types ({fuelTypes.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {fuelTypes.length === 0 && <Typography color="text.secondary">No fuel types yet.</Typography>}
+                {fuelTypes.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.name}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Fuel Categories ({fuelCategories.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {fuelCategories.length === 0 && <Typography color="text.secondary">No fuel categories yet.</Typography>}
+                {fuelCategories.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.name}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Flights ({flights.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {flights.length === 0 && <Typography color="text.secondary">No flights yet.</Typography>}
+                {flights.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.code}{item.description ? ` / ${item.description}` : ""}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1">Routes ({routes.length})</Typography>
+              <Divider sx={{ my: 1 }} />
+              <Stack spacing={0.75}>
+                {routes.length === 0 && <Typography color="text.secondary">No routes yet.</Typography>}
+                {routes.map((item) => (
+                  <Typography key={item.id} variant="body2">
+                    {item.name}{item.description ? ` / ${item.description}` : ""}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+        </Box>
+      </SectionCard>
+    </Stack>
+  );
+}

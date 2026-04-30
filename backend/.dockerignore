@@ -1,0 +1,13 @@
+db.sqlite3
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.env.*
+*.egg-info/
+dist/
+build/
+staticfiles/
+.git/
+.gitignore
+README.md

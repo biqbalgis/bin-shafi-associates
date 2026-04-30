@@ -59,6 +59,44 @@ Production-oriented full-stack application for aviation fuel order workflow, app
 - Backend migrations were generated and applied successfully under a local SQLite override for verification.
 - Frontend production build completed successfully with Vite.
 
+## Production Deployment
+
+This repo includes a separate production stack for a single-domain deployment with Docker, PostgreSQL, Nginx, and Let's Encrypt SSL.
+
+Relevant files:
+
+- `docker-compose.production.yml`
+- `.env.production.example`
+- `backend/.env.production.example`
+- `deploy/nginx/init.conf.template`
+- `deploy/nginx/prod.conf.template`
+- `scripts/deploy-production.sh`
+
+Expected server layout:
+
+- `/home/binshafi/`
+- `/home/binshafi/backend`
+- `/home/binshafi/frontend`
+
+Basic production flow:
+
+1. Point your DNS `A` record for the subdomain to the server IP.
+2. Clone the repo into `/home/binshafi`.
+3. Copy `.env.production.example` to `.env.production`.
+4. Copy `backend/.env.production.example` to `backend/.env.production`.
+5. Set the production domain, Let's Encrypt email, Django secret, PostgreSQL credentials, and SMTP credentials.
+6. Run:
+   - `chmod +x scripts/deploy-production.sh`
+   - `./scripts/deploy-production.sh`
+
+What the production stack does:
+
+- `db`: PostgreSQL 16 with a persistent Docker volume
+- `backend`: Django + Gunicorn, with migrations and static collection at container startup
+- `frontend`: built Vite app served from Nginx inside the frontend container
+- `nginx`: public reverse proxy for `/`, `/api/`, `/admin/`, and `/static/`
+- `certbot`: Let's Encrypt certificate issuance using the webroot method
+
 ## API Summary
 
 - Auth:

@@ -1,0 +1,69 @@
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.db import models
+
+
+class Financial(models.Model):
+    GST_RATE = Decimal("0.18")
+    order = models.OneToOneField("orders.Order", on_delete=models.CASCADE, related_name="financial")
+    dr_no = models.CharField(max_length=100, blank=True)
+    digital_invoice = models.CharField(max_length=100, blank=True)
+    pso_invoice = models.CharField(max_length=100, blank=True)
+    pso_rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    pso_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    fueling_charges = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    pso_gst = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    pso_total_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    bsa_invoice = models.CharField(max_length=100, blank=True)
+    bsa_rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    bsa_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    bsa_fueling_charges = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    bsa_gst = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    bsa_total_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    profit = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+
+    def __str__(self) -> str:
+        return f"Financials for {self.order.ser_no}"
+
+    def calculate_profit(self) -> Decimal:
+        bsa_total = self.bsa_total_price or Decimal("0.00")
+        pso_total = self.pso_total_price or Decimal("0.00")
+        return bsa_total - pso_total
+
+    def _quantize(self, value: Decimal) -> Decimal:
+        return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def _calculate_gst(self, price: Decimal | None) -> Decimal | None:
+        if price is None:
+            return None
+        return self._quantize(price * self.GST_RATE)
+
+    def _calculate_total(self, price: Decimal | None, charges: Decimal | None, gst: Decimal | None) -> Decimal | None:
+        if price is None and charges is None and gst is None:
+            return None
+        subtotal = (price or Decimal("0.00")) + (charges or Decimal("0.00")) + (gst or Decimal("0.00"))
+        return self._quantize(subtotal)
+
+    def is_financially_complete(self) -> bool:
+        dr_no = self.order.dr_no or self.dr_no
+        required_values = [
+            dr_no,
+            self.pso_total_price,
+            self.bsa_total_price,
+            self.pso_rate,
+            self.bsa_rate,
+        ]
+        return all(value not in (None, "") for value in required_values)
+
+    def save(self, *args, **kwargs):
+        self.pso_gst = self._calculate_gst(self.pso_price)
+        self.bsa_gst = self._calculate_gst(self.bsa_price)
+        self.pso_total_price = self._calculate_total(self.pso_price, self.fueling_charges, self.pso_gst)
+        self.bsa_total_price = self._calculate_total(self.bsa_price, self.bsa_fueling_charges, self.bsa_gst)
+        self.profit = self.calculate_profit()
+        super().save(*args, **kwargs)

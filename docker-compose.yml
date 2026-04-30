@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aviation_fuel
+      POSTGRES_USER: aviationuser
+      POSTGRES_PASSWORD: aviationpass_Secure123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aviationuser -d aviation_fuel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      DJANGO_SECRET_KEY: "prod-secret-key-change-me-Xk9mN2pQ7vR4wL6"
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: "139.162.60.105,localhost"
+      DB_ENGINE: django.db.backends.postgresql
+      POSTGRES_DB: aviation_fuel
+      POSTGRES_USER: aviationuser
+      POSTGRES_PASSWORD: aviationpass_Secure123
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      CORS_ALLOWED_ORIGINS: "http://139.162.60.105:5155"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: "http://139.162.60.105:8085/api"
+    restart: unless-stopped
+    ports:
+      - "5155:5155"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
