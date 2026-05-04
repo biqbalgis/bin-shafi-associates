@@ -33,6 +33,11 @@ class FinancialSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = (
+            "pso_price",
+            "fueling_charges",
+            "bsa_invoice",
+            "bsa_price",
+            "bsa_fueling_charges",
             "pso_gst",
             "pso_total_price",
             "bsa_gst",

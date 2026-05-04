@@ -33,7 +33,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
       args:
-        VITE_API_BASE_URL: https://${DOMAIN}/api
+        VITE_API_BASE_URL: /api
     restart: unless-stopped
     depends_on:
       - backend
