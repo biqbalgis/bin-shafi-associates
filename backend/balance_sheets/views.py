@@ -19,7 +19,7 @@ class BalanceSheetFilter(filters.FilterSet):
 
 
 class BalanceSheetViewSet(viewsets.ModelViewSet):
-    queryset = BalanceSheet.objects.select_related("created_by").all()
+    queryset = BalanceSheet.objects.select_related("created_by").prefetch_related("pso_deposits").all()
     serializer_class = BalanceSheetSerializer
     permission_classes = [IsAdminRole]
     filterset_class = BalanceSheetFilter

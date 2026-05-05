@@ -3,10 +3,16 @@ import type { BalanceSheet, ListResponse } from "../types";
 
 export type BalanceSheetPayload = {
   date: string;
+  aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
-  pso_deposited: string;
+  pso_dr_no: string;
   pso_consumed: string;
+  pso_deposits: {
+    amount: string;
+    date: string;
+    cheque_number: string;
+  }[];
 };
 
 export type BalanceSheetFilters = {
@@ -22,10 +28,16 @@ function normalizeAmount(value: string) {
 function normalizePayload(payload: BalanceSheetPayload) {
   return {
     ...payload,
+    aviation_dr_no: payload.aviation_dr_no.trim(),
     aviation_total_due: normalizeAmount(payload.aviation_total_due),
     aviation_paid: normalizeAmount(payload.aviation_paid),
-    pso_deposited: normalizeAmount(payload.pso_deposited),
+    pso_dr_no: payload.pso_dr_no.trim(),
     pso_consumed: normalizeAmount(payload.pso_consumed),
+    pso_deposits: payload.pso_deposits.map((deposit) => ({
+      amount: normalizeAmount(deposit.amount),
+      date: deposit.date,
+      cheque_number: deposit.cheque_number.trim(),
+    })),
   };
 }
 

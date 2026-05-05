@@ -124,14 +124,26 @@ export type Financial = {
 export type BalanceSheet = {
   id: number;
   date: string;
+  aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
   aviation_balance: string;
+  pso_dr_no: string;
   pso_deposited: string;
   pso_consumed: string;
   pso_balance: string;
+  pso_deposits: PsoDeposit[];
   created_by: number | null;
   created_by_username: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PsoDeposit = {
+  id: number;
+  amount: string;
+  date: string;
+  cheque_number: string;
   created_at: string;
   updated_at: string;
 };

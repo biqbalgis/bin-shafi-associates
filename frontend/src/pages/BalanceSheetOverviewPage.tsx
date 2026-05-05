@@ -36,6 +36,15 @@ function formatPercent(numerator: number, denominator: number) {
   return Math.min(100, Math.max(0, (numerator / denominator) * 100));
 }
 
+function formatDepositSummary(record: BalanceSheet) {
+  if (record.pso_deposits.length === 0) {
+    return "--";
+  }
+  return record.pso_deposits
+    .map((deposit) => `${deposit.date}: ${formatAmount(deposit.amount)}${deposit.cheque_number ? ` (${deposit.cheque_number})` : ""}`)
+    .join(" | ");
+}
+
 function SummaryCard({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
     <Card sx={{ flex: 1 }}>
@@ -77,8 +86,11 @@ export default function BalanceSheetOverviewPage() {
   const latestRecord = records[0];
   const totalAviationDue = records.reduce((sum, item) => sum + parseAmount(item.aviation_total_due), 0);
   const totalAviationBalance = records.reduce((sum, item) => sum + parseAmount(item.aviation_balance), 0);
-  const totalPsoDeposited = records.reduce((sum, item) => sum + parseAmount(item.pso_deposited), 0);
-  const totalPsoBalance = records.reduce((sum, item) => sum + parseAmount(item.pso_balance), 0);
+  const totalPsoAdded = records.reduce(
+    (sum, item) => sum + item.pso_deposits.reduce((depositSum, deposit) => depositSum + parseAmount(deposit.amount), 0),
+    0,
+  );
+  const latestPsoBalance = latestRecord ? parseAmount(latestRecord.pso_balance) : 0;
 
   return (
     <Stack spacing={3}>
@@ -86,7 +98,7 @@ export default function BalanceSheetOverviewPage() {
         <Box>
           <Typography variant="h4">Balance Sheet Overview</Typography>
           <Typography color="text.secondary">
-            Review all stored aviation and PSO balances, grouped by date and recording admin.
+            Review stored aviation and PSO balances, including DR numbers and PSO deposit history.
           </Typography>
         </Box>
         <Button variant="outlined" onClick={() => void reloadData()} disabled={loading}>
@@ -108,9 +120,9 @@ export default function BalanceSheetOverviewPage() {
           caption={`Open aviation balance: ${formatAmount(totalAviationBalance)}`}
         />
         <SummaryCard
-          label="PSO Deposited"
-          value={formatAmount(totalPsoDeposited)}
-          caption={`Remaining PSO balance: ${formatAmount(totalPsoBalance)}`}
+          label="PSO Added"
+          value={formatAmount(totalPsoAdded)}
+          caption={`Latest available PSO: ${formatAmount(latestRecord?.pso_deposited ?? 0)} | Remaining balance: ${formatAmount(latestPsoBalance)}`}
         />
       </Stack>
 
@@ -121,7 +133,7 @@ export default function BalanceSheetOverviewPage() {
               <Typography variant="h6">Latest Snapshot</Typography>
               <Typography color="text.secondary">
                 {latestRecord
-                  ? `Captured on ${latestRecord.date} by ${latestRecord.created_by_username ?? "Admin"}.`
+                  ? `Captured on ${latestRecord.date}.`
                   : "Create the first balance-sheet record to populate this view."}
               </Typography>
             </Box>
@@ -133,7 +145,7 @@ export default function BalanceSheetOverviewPage() {
                     <Stack spacing={1.25}>
                       <Typography variant="subtitle1">Aviation Collection</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Paid {formatAmount(latestRecord.aviation_paid)} out of {formatAmount(latestRecord.aviation_total_due)}
+                        DR {latestRecord.aviation_dr_no || "--"} | Paid {formatAmount(latestRecord.aviation_paid)} out of {formatAmount(latestRecord.aviation_total_due)}
                       </Typography>
                       <LinearProgress
                         variant="determinate"
@@ -150,7 +162,7 @@ export default function BalanceSheetOverviewPage() {
                     <Stack spacing={1.25}>
                       <Typography variant="subtitle1">PSO Utilization</Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Consumed {formatAmount(latestRecord.pso_consumed)} out of {formatAmount(latestRecord.pso_deposited)}
+                        DR {latestRecord.pso_dr_no || "--"} | Consumed {formatAmount(latestRecord.pso_consumed)} out of {formatAmount(latestRecord.pso_deposited)}
                       </Typography>
                       <LinearProgress
                         variant="determinate"
@@ -174,7 +186,7 @@ export default function BalanceSheetOverviewPage() {
             <Box>
               <Typography variant="h6">History</Typography>
               <Typography color="text.secondary">
-                Daily balance-sheet records with both Aviation and PSO figures.
+                Daily balance-sheet records with aviation and PSO figures plus deposit history.
               </Typography>
             </Box>
 
@@ -183,19 +195,21 @@ export default function BalanceSheetOverviewPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
-                    <TableCell>User</TableCell>
+                    <TableCell>Aviation DR</TableCell>
                     <TableCell align="right">Aviation Due</TableCell>
                     <TableCell align="right">Aviation Paid</TableCell>
                     <TableCell align="right">Aviation Balance</TableCell>
+                    <TableCell>PSO DR</TableCell>
                     <TableCell align="right">PSO Deposited</TableCell>
                     <TableCell align="right">PSO Consumed</TableCell>
                     <TableCell align="right">PSO Balance</TableCell>
+                    <TableCell>Deposit History</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {records.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
+                      <TableCell colSpan={10} align="center">
                         {loading ? "Loading balance sheets..." : "No balance-sheet records found."}
                       </TableCell>
                     </TableRow>
@@ -203,13 +217,15 @@ export default function BalanceSheetOverviewPage() {
                   {records.map((record) => (
                     <TableRow key={record.id} hover>
                       <TableCell>{record.date}</TableCell>
-                      <TableCell>{record.created_by_username ?? "Admin"}</TableCell>
+                      <TableCell>{record.aviation_dr_no || "--"}</TableCell>
                       <TableCell align="right">{formatAmount(record.aviation_total_due)}</TableCell>
                       <TableCell align="right">{formatAmount(record.aviation_paid)}</TableCell>
                       <TableCell align="right">{formatAmount(record.aviation_balance)}</TableCell>
+                      <TableCell>{record.pso_dr_no || "--"}</TableCell>
                       <TableCell align="right">{formatAmount(record.pso_deposited)}</TableCell>
                       <TableCell align="right">{formatAmount(record.pso_consumed)}</TableCell>
                       <TableCell align="right">{formatAmount(record.pso_balance)}</TableCell>
+                      <TableCell>{formatDepositSummary(record)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
