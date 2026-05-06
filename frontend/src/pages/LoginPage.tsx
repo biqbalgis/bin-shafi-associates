@@ -1,4 +1,3 @@
-import FlightTakeoffRoundedIcon from "@mui/icons-material/FlightTakeoffRounded";
 import {
   Alert,
   Box,
@@ -15,6 +14,10 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../context/AuthContext";
+
+const HERO_AIRCRAFT_IMAGE =
+  "/bg.png";
+const COMPANY_LOGO_PATH = "/binshafi-logo.png";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
@@ -46,21 +49,40 @@ export default function LoginPage() {
     <Box
       sx={{
         minHeight: "100vh",
-        px: { xs: 2, md: 4 },
-        py: { xs: 3, md: 5 },
+        px: { xs: 2, md: 3 },
+        py: { xs: 2, md: 2 },
         background:
-          "radial-gradient(circle at top left, rgba(216,143,20,0.22), transparent 28%), radial-gradient(circle at bottom right, rgba(24,49,83,0.16), transparent 32%), linear-gradient(180deg, #f8f4eb 0%, #efe5d2 100%)",
+          `linear-gradient(180deg, rgba(248,244,235,0.5) 0%, rgba(239,229,210,0.5) 100%), url(${HERO_AIRCRAFT_IMAGE})`,
+        backgroundSize: "cover",
+        // backgroundPosition: "center center",
+        // backgroundAttachment: { md: "fixed" },
       }}
     >
+      <Typography
+        sx={{
+          position: "fixed",
+          top: { xs: 18, md: 26 },
+          left: { xs: 18, md: 28 },
+          zIndex: 1,
+          fontSize: { xs: "1.35rem", sm: "1.7rem", md: "2rem" },
+          fontWeight: 700,
+          letterSpacing: "-0.04em",
+          color: "#ffffff",
+          textShadow: "0 8px 24px rgba(11,20,33,0.45)",
+        }}
+      >
+        Bin Shafi Fuel
+      </Typography>
+
       <Box
         sx={{
           width: "100%",
-          maxWidth: 1180,
+          maxWidth: 1440,
           mx: "auto",
-          minHeight: { md: "calc(100vh - 40px)" },
+          minHeight: { md: "calc(100vh - 350px)" },
           display: "grid",
-          gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.2fr) minmax(360px, 440px)" },
-          gap: { xs: 3, md: 6 },
+          gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1.55fr) minmax(380px, 440px)" },
+          gap: { xs: 3, md: 4 },
           alignItems: "center",
         }}
       >
@@ -69,65 +91,42 @@ export default function LoginPage() {
           sx={{
             alignItems: { xs: "center", md: "flex-start" },
             textAlign: { xs: "center", md: "left" },
-            px: { md: 2 },
+            px: { md: 0 },
+            width: "80%",
           }}
         >
           <Box
             sx={{
               position: "relative",
-              width: { xs: 260, sm: 320, md: 380 },
-              height: { xs: 260, sm: 320, md: 380 },
-              display: "grid",
-              placeItems: "center",
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.96), rgba(255,250,243,0.72) 35%, rgba(24,49,83,0.1) 100%)",
-              border: "1px solid rgba(24,49,83,0.1)",
-              boxShadow:
-                "0 30px 80px rgba(24,49,83,0.16), inset 0 -20px 60px rgba(216,143,20,0.12)",
-              overflow: "hidden",
-              "&::before": {
-                content: '""',
-                position: "absolute",
-                inset: 24,
-                borderRadius: "50%",
-                border: "1px dashed rgba(24,49,83,0.14)",
-              },
+              width: "80%",
+              // maxWidth: { xs: 620, md: "100%" },
+              // minHeight: { xs: 100, sm: 140, md: 10 },
+              borderRadius: { xs: 5, md: 7 },
+              bgcolor: "rgba(255,255,255,0.28)",
+              backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              boxShadow: "0 24px 60px rgba(24,49,83,0.1)",
               "&::after": {
                 content: '""',
                 position: "absolute",
-                width: "72%",
-                height: 26,
-                bottom: 54,
-                borderRadius: 999,
-                background: "linear-gradient(90deg, rgba(24,49,83,0), rgba(24,49,83,0.14), rgba(24,49,83,0))",
-                filter: "blur(10px)",
+                inset: 18,
+                borderRadius: { xs: 4, md: 6 },
+                border: "1px solid rgba(255,255,255,0.28)",
+                zIndex: 2,
               },
             }}
           >
             <Box
               sx={{
                 position: "absolute",
-                width: "68%",
-                height: "68%",
-                borderRadius: "50%",
+                inset: 0,
                 background:
-                  "conic-gradient(from 180deg, rgba(216,143,20,0.16), rgba(24,49,83,0.08), rgba(216,143,20,0.16))",
-                filter: "blur(10px)",
-              }}
-            />
-            <FlightTakeoffRoundedIcon
-              sx={{
-                fontSize: { xs: 132, sm: 160, md: 192 },
-                color: "primary.main",
-                transform: "rotate(-10deg) translateY(-10px)",
-                zIndex: 1,
-                filter: "drop-shadow(0 12px 20px rgba(24,49,83,0.22))",
+                  "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.5), transparent 100%), linear-gradient(135deg, rgba(24,49,83,0.08), rgba(216,143,20,0.12))",
               }}
             />
           </Box>
 
-          <Stack spacing={1} sx={{ alignItems: { xs: "center", md: "flex-start" } }}>
+          {/* <Stack spacing={1} sx={{ alignItems: { xs: "center", md: "flex-start" } }}>
             <Typography
               variant="h2"
               sx={{
@@ -148,16 +147,33 @@ export default function LoginPage() {
             >
               Aviation fuel operations, order tracking, and financial closure in one workspace.
             </Typography>
-          </Stack>
+          </Stack> */}
         </Stack>
 
         <Card sx={{ width: "100%", maxWidth: 440, justifySelf: "center" }}>
           <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
             <Stack spacing={3}>
-              <Box>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Box
+                  component="img"
+                  src={COMPANY_LOGO_PATH}
+                  alt="Bin Shafi logo"
+                  sx={{
+                    width: 58,
+                    height: 58,
+                    objectFit: "contain",
+                    borderRadius: 2,
+                    p: 0.75,
+                    bgcolor: "rgba(255,255,255,0.88)",
+                    border: "1px solid rgba(24,49,83,0.1)",
+                  }}
+                />
                 <Typography variant="overline" color="secondary.main">
                   Secure Access
                 </Typography>
+              </Stack>
+
+              <Box>
                 <Typography variant="h4">Portal Login</Typography>
               </Box>
 
