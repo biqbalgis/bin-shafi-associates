@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from aircrafts.views import AircraftViewSet
 from balance_sheets.views import BalanceSheetViewSet
-from clients.views import ClientViewSet
+from clients.views import ClientPaymentViewSet, ClientViewSet
 from financials.views import FinancialViewSet
 from orders.views import (
     AirportViewSet,
@@ -20,6 +20,7 @@ from users.views import CurrentUserView, LoginView, RegisterView, UserManagement
 
 router = DefaultRouter()
 router.register("clients", ClientViewSet, basename="client")
+router.register("client-payments", ClientPaymentViewSet, basename="client-payment")
 router.register("aircrafts", AircraftViewSet, basename="aircraft")
 router.register("users", UserManagementViewSet, basename="user")
 router.register("orders", OrderViewSet, basename="order")

@@ -1,9 +1,60 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
-from .models import Client
+from .balances import quantize_money
+from .models import Client, ClientPayment
+
+
+class ClientPaymentSerializer(serializers.ModelSerializer):
+    client_name = serializers.CharField(source="client.name", read_only=True)
+    order_ser_no = serializers.CharField(source="order.ser_no", read_only=True)
+    created_by_username = serializers.CharField(source="created_by.username", read_only=True)
+
+    class Meta:
+        model = ClientPayment
+        fields = (
+            "id",
+            "client",
+            "client_name",
+            "order",
+            "order_ser_no",
+            "amount",
+            "date",
+            "reference",
+            "notes",
+            "created_by",
+            "created_by_username",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("created_by", "created_by_username", "created_at", "updated_at")
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Payment amount must be greater than zero.")
+        return quantize_money(value)
+
+    def validate(self, attrs):
+        client = attrs.get("client") or getattr(self.instance, "client", None)
+        order = attrs.get("order") or getattr(self.instance, "order", None)
+
+        if order and client and order.client_id != client.id:
+            raise serializers.ValidationError({"order": "Selected order must belong to the selected client."})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data["created_by"] = self.context["request"].user
+        return super().create(validated_data)
 
 
 class ClientSerializer(serializers.ModelSerializer):
+    total_orders = serializers.SerializerMethodField()
+    completed_orders = serializers.SerializerMethodField()
+    total_billed = serializers.SerializerMethodField()
+    total_paid = serializers.SerializerMethodField()
+    total_due = serializers.SerializerMethodField()
+
     class Meta:
         model = Client
         fields = (
@@ -14,7 +65,74 @@ class ClientSerializer(serializers.ModelSerializer):
             "contact_phone",
             "address",
             "is_active",
+            "total_orders",
+            "completed_orders",
+            "total_billed",
+            "total_paid",
+            "total_due",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("created_at", "updated_at")
+
+    def _get_balance_value(self, obj, field_name):
+        if hasattr(obj, field_name):
+            return getattr(obj, field_name)
+        cache = getattr(obj, "_client_balance_cache", None)
+        if cache is None:
+            completed_orders = obj.orders.filter(status="COMPLETED")
+            billed_orders = completed_orders.filter(financial__isnull=False).select_related("financial")
+            total_billed = quantize_money(
+                sum(((order.financial.bsa_total_price or Decimal("0.00")) for order in billed_orders), Decimal("0.00"))
+            )
+            total_paid = quantize_money(sum((payment.amount for payment in obj.payments.all()), Decimal("0.00")))
+            cache = {
+                "total_orders": obj.orders.count(),
+                "completed_orders": completed_orders.count(),
+                "total_billed": total_billed,
+                "total_paid": total_paid,
+                "total_due": quantize_money(total_billed - total_paid),
+            }
+            obj._client_balance_cache = cache
+        return cache[field_name]
+
+    def get_total_orders(self, obj):
+        return self._get_balance_value(obj, "total_orders")
+
+    def get_completed_orders(self, obj):
+        return self._get_balance_value(obj, "completed_orders")
+
+    def get_total_billed(self, obj):
+        return self._get_balance_value(obj, "total_billed")
+
+    def get_total_paid(self, obj):
+        return self._get_balance_value(obj, "total_paid")
+
+    def get_total_due(self, obj):
+        return self._get_balance_value(obj, "total_due")
+
+
+class ClientStatementEntrySerializer(serializers.Serializer):
+    entry_type = serializers.CharField()
+    date = serializers.DateField()
+    order_id = serializers.IntegerField(allow_null=True)
+    order_ser_no = serializers.CharField(allow_blank=True)
+    reference = serializers.CharField(allow_blank=True)
+    notes = serializers.CharField(allow_blank=True)
+    billed_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    paid_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    balance_after = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class ClientBalanceTotalsSerializer(serializers.Serializer):
+    total_orders = serializers.IntegerField()
+    completed_orders = serializers.IntegerField()
+    total_billed = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_paid = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_due = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class ClientBalanceStatementSerializer(serializers.Serializer):
+    client = ClientSerializer()
+    totals = ClientBalanceTotalsSerializer()
+    entries = ClientStatementEntrySerializer(many=True)
