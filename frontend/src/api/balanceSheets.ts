@@ -3,6 +3,7 @@ import type { BalanceSheet, ListResponse } from "../types";
 
 export type BalanceSheetPayload = {
   date: string;
+  order?: number | null;
   aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
@@ -19,6 +20,8 @@ export type BalanceSheetFilters = {
   date?: string;
   date_from?: string;
   date_to?: string;
+  order?: number;
+  record_type?: "daily" | "order";
 };
 
 function normalizeAmount(value: string) {
@@ -28,6 +31,7 @@ function normalizeAmount(value: string) {
 function normalizePayload(payload: BalanceSheetPayload) {
   return {
     ...payload,
+    order: payload.order ?? undefined,
     aviation_dr_no: payload.aviation_dr_no.trim(),
     aviation_total_due: normalizeAmount(payload.aviation_total_due),
     aviation_paid: normalizeAmount(payload.aviation_paid),
@@ -47,6 +51,8 @@ export async function listBalanceSheets(filters?: BalanceSheetFilters) {
       date: filters?.date || undefined,
       date_from: filters?.date_from || undefined,
       date_to: filters?.date_to || undefined,
+      order: filters?.order || undefined,
+      record_type: filters?.record_type || undefined,
     },
   });
   return unwrapListResponse(response.data);

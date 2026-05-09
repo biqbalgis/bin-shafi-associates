@@ -79,6 +79,7 @@ class OrderSerializer(serializers.ModelSerializer):
     airport_name = serializers.CharField(source="airport.name", read_only=True)
     fuel_type_name = serializers.CharField(source="fuel_type.name", read_only=True)
     created_by_name = serializers.CharField(source="created_by.username", read_only=True)
+    order_total_due = serializers.SerializerMethodField()
     audit_logs = OrderStatusAuditLogSerializer(many=True, read_only=True)
     financial = serializers.SerializerMethodField()
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.filter(is_active=True), required=False)
@@ -106,6 +107,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "fuel_type",
             "fuel_type_name",
             "quantity_ltrs",
+            "order_total_due",
             "created_by",
             "created_by_name",
             "created_at",
@@ -114,6 +116,11 @@ class OrderSerializer(serializers.ModelSerializer):
             "financial",
         )
         read_only_fields = ("ser_no", "created_by", "created_at", "updated_at", "audit_logs", "financial")
+
+    def get_order_total_due(self, obj):
+        if not hasattr(obj, "financial"):
+            return None
+        return obj.financial.bsa_total_price
 
     def get_financial(self, obj):
         request = self.context.get("request")

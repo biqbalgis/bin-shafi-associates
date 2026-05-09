@@ -15,18 +15,18 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { listBalanceSheets } from "../api/balanceSheets";
 import type { BalanceSheet } from "../types";
 
-function parseAmount(value: string) {
+function parseAmount(value: string | number) {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function formatAmount(value: string | number) {
-  const numeric = typeof value === "number" ? value : parseAmount(value);
-  return numeric.toFixed(2);
+  return parseAmount(value).toFixed(2);
 }
 
 function formatPercent(numerator: number, denominator: number) {
@@ -62,7 +62,8 @@ function SummaryCard({ label, value, caption }: { label: string; value: string; 
 }
 
 export default function BalanceSheetOverviewPage() {
-  const [records, setRecords] = useState<BalanceSheet[]>([]);
+  const [orderRecords, setOrderRecords] = useState<BalanceSheet[]>([]);
+  const [dailyRecords, setDailyRecords] = useState<BalanceSheet[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -70,8 +71,12 @@ export default function BalanceSheetOverviewPage() {
     setLoading(true);
     setError("");
     try {
-      const payload = await listBalanceSheets();
-      setRecords(payload);
+      const [ordersPayload, dailyPayload] = await Promise.all([
+        listBalanceSheets({ record_type: "order" }),
+        listBalanceSheets({ record_type: "daily" }),
+      ]);
+      setOrderRecords(ordersPayload);
+      setDailyRecords(dailyPayload);
     } catch {
       setError("Unable to load balance-sheet history.");
     } finally {
@@ -83,14 +88,16 @@ export default function BalanceSheetOverviewPage() {
     void reloadData();
   }, []);
 
-  const latestRecord = records[0];
-  const totalAviationDue = records.reduce((sum, item) => sum + parseAmount(item.aviation_total_due), 0);
-  const totalAviationBalance = records.reduce((sum, item) => sum + parseAmount(item.aviation_balance), 0);
-  const totalPsoAdded = records.reduce(
+  const latestOrderRecord = orderRecords[0];
+  const latestDailyRecord = dailyRecords[0];
+  const totalOrderDue = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_total_due), 0);
+  const totalOrderPaid = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_paid), 0);
+  const totalOrderBalance = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_balance), 0);
+  const totalPsoAdded = dailyRecords.reduce(
     (sum, item) => sum + item.pso_deposits.reduce((depositSum, deposit) => depositSum + parseAmount(deposit.amount), 0),
     0,
   );
-  const latestPsoBalance = latestRecord ? parseAmount(latestRecord.pso_balance) : 0;
+  const latestPsoBalance = latestDailyRecord ? parseAmount(latestDailyRecord.pso_balance) : 0;
 
   return (
     <Stack spacing={3}>
@@ -98,31 +105,36 @@ export default function BalanceSheetOverviewPage() {
         <Box>
           <Typography variant="h4">Balance Sheet Overview</Typography>
           <Typography color="text.secondary">
-            Review stored aviation and PSO balances, including DR numbers and PSO deposit history.
+            Review order-linked collections by DR number and the separate daily PSO ledger.
           </Typography>
         </Box>
-        <Button variant="outlined" onClick={() => void reloadData()} disabled={loading}>
-          Refresh
-        </Button>
+        <Stack direction="row" spacing={1.5}>
+          <Button variant="outlined" onClick={() => void reloadData()} disabled={loading}>
+            Refresh
+          </Button>
+          <Button component={Link} to="/balance-sheet" variant="outlined">
+            Daily Balance Sheet
+          </Button>
+        </Stack>
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
         <SummaryCard
-          label="Records"
-          value={String(records.length)}
-          caption={latestRecord ? `Latest entry: ${latestRecord.date}` : "No records yet."}
+          label="Order Due"
+          value={formatAmount(totalOrderDue)}
+          caption={`Collected ${formatAmount(totalOrderPaid)} | Remaining ${formatAmount(totalOrderBalance)}`}
         />
         <SummaryCard
-          label="Aviation Due"
-          value={formatAmount(totalAviationDue)}
-          caption={`Open aviation balance: ${formatAmount(totalAviationBalance)}`}
+          label="Tracked Orders"
+          value={String(orderRecords.length)}
+          caption={latestOrderRecord ? `Latest order record: ${latestOrderRecord.order_ser_no}` : "No order-linked balance sheets yet."}
         />
         <SummaryCard
           label="PSO Added"
           value={formatAmount(totalPsoAdded)}
-          caption={`Latest available PSO: ${formatAmount(latestRecord?.pso_deposited ?? 0)} | Remaining balance: ${formatAmount(latestPsoBalance)}`}
+          caption={`Latest available PSO: ${formatAmount(latestDailyRecord?.pso_deposited ?? 0)} | Remaining balance: ${formatAmount(latestPsoBalance)}`}
         />
       </Stack>
 
@@ -130,51 +142,36 @@ export default function BalanceSheetOverviewPage() {
         <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="h6">Latest Snapshot</Typography>
+              <Typography variant="h6">Latest Order Collection</Typography>
               <Typography color="text.secondary">
-                {latestRecord
-                  ? `Captured on ${latestRecord.date}.`
-                  : "Create the first balance-sheet record to populate this view."}
+                {latestOrderRecord
+                  ? `Collection snapshot for ${latestOrderRecord.order_ser_no}.`
+                  : "Save an order-linked balance sheet from the Orders screen to populate this view."}
               </Typography>
             </Box>
 
-            {latestRecord && (
-              <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Stack spacing={1.25}>
-                      <Typography variant="subtitle1">Aviation Collection</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        DR {latestRecord.aviation_dr_no || "--"} | Paid {formatAmount(latestRecord.aviation_paid)} out of {formatAmount(latestRecord.aviation_total_due)}
-                      </Typography>
-                      <LinearProgress
-                        variant="determinate"
-                        value={formatPercent(parseAmount(latestRecord.aviation_paid), parseAmount(latestRecord.aviation_total_due))}
-                        sx={{ height: 10, borderRadius: 999 }}
-                      />
-                      <Typography variant="body2">Balance: {formatAmount(latestRecord.aviation_balance)}</Typography>
-                    </Stack>
-                  </CardContent>
-                </Card>
-
-                <Card variant="outlined">
-                  <CardContent>
-                    <Stack spacing={1.25}>
-                      <Typography variant="subtitle1">PSO Utilization</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        DR {latestRecord.pso_dr_no || "--"} | Consumed {formatAmount(latestRecord.pso_consumed)} out of {formatAmount(latestRecord.pso_deposited)}
-                      </Typography>
-                      <LinearProgress
-                        variant="determinate"
-                        value={formatPercent(parseAmount(latestRecord.pso_consumed), parseAmount(latestRecord.pso_deposited))}
-                        sx={{ height: 10, borderRadius: 999 }}
-                        color="secondary"
-                      />
-                      <Typography variant="body2">Balance: {formatAmount(latestRecord.pso_balance)}</Typography>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Box>
+            {latestOrderRecord && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack spacing={1.25}>
+                    <Typography variant="subtitle1">{latestOrderRecord.order_ser_no} / {latestOrderRecord.client_name}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      DR {latestOrderRecord.aviation_dr_no || "--"} | Paid {formatAmount(latestOrderRecord.aviation_paid)} out of {formatAmount(latestOrderRecord.aviation_total_due)}
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={formatPercent(parseAmount(latestOrderRecord.aviation_paid), parseAmount(latestOrderRecord.aviation_total_due))}
+                      sx={{ height: 10, borderRadius: 999 }}
+                    />
+                    <Typography variant="body2">Balance: {formatAmount(latestOrderRecord.aviation_balance)}</Typography>
+                    {latestOrderRecord.order && (
+                      <Button component={Link} to={`/balance-sheet/${latestOrderRecord.order}`} variant="outlined" sx={{ alignSelf: "flex-start" }}>
+                        Open Order Balance
+                      </Button>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
             )}
           </Stack>
         </CardContent>
@@ -184,9 +181,9 @@ export default function BalanceSheetOverviewPage() {
         <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="h6">History</Typography>
+              <Typography variant="h6">Order Collections</Typography>
               <Typography color="text.secondary">
-                Daily balance-sheet records with aviation and PSO figures plus deposit history.
+                One record per order, linked to the order DR number. Partial collections reduce the client’s overall outstanding amount.
               </Typography>
             </Box>
 
@@ -195,10 +192,65 @@ export default function BalanceSheetOverviewPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
-                    <TableCell>Aviation DR</TableCell>
-                    <TableCell align="right">Aviation Due</TableCell>
-                    <TableCell align="right">Aviation Paid</TableCell>
-                    <TableCell align="right">Aviation Balance</TableCell>
+                    <TableCell>Order</TableCell>
+                    <TableCell>Client</TableCell>
+                    <TableCell>DR</TableCell>
+                    <TableCell align="right">Due</TableCell>
+                    <TableCell align="right">Paid</TableCell>
+                    <TableCell align="right">Balance</TableCell>
+                    <TableCell align="right">Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {orderRecords.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} align="center">
+                        {loading ? "Loading order-linked balances..." : "No order-linked balance-sheet records found."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {orderRecords.map((record) => (
+                    <TableRow key={record.id} hover>
+                      <TableCell>{record.date}</TableCell>
+                      <TableCell>{record.order_ser_no || "--"}</TableCell>
+                      <TableCell>{record.client_name || "--"}</TableCell>
+                      <TableCell>{record.aviation_dr_no || "--"}</TableCell>
+                      <TableCell align="right">{formatAmount(record.aviation_total_due)}</TableCell>
+                      <TableCell align="right">{formatAmount(record.aviation_paid)}</TableCell>
+                      <TableCell align="right">{formatAmount(record.aviation_balance)}</TableCell>
+                      <TableCell align="right">
+                        {record.order ? (
+                          <Button component={Link} to={`/balance-sheet/${record.order}`} size="small" variant="outlined">
+                            Open
+                          </Button>
+                        ) : (
+                          "--"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h6">Daily PSO Ledger</Typography>
+              <Typography color="text.secondary">
+                Separate daily records for PSO deposits, consumption, and running balance.
+              </Typography>
+            </Box>
+
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Date</TableCell>
                     <TableCell>PSO DR</TableCell>
                     <TableCell align="right">PSO Deposited</TableCell>
                     <TableCell align="right">PSO Consumed</TableCell>
@@ -207,20 +259,16 @@ export default function BalanceSheetOverviewPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {records.length === 0 && (
+                  {dailyRecords.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={10} align="center">
-                        {loading ? "Loading balance sheets..." : "No balance-sheet records found."}
+                      <TableCell colSpan={6} align="center">
+                        {loading ? "Loading daily balance sheets..." : "No daily balance-sheet records found."}
                       </TableCell>
                     </TableRow>
                   )}
-                  {records.map((record) => (
+                  {dailyRecords.map((record) => (
                     <TableRow key={record.id} hover>
                       <TableCell>{record.date}</TableCell>
-                      <TableCell>{record.aviation_dr_no || "--"}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_total_due)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_paid)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_balance)}</TableCell>
                       <TableCell>{record.pso_dr_no || "--"}</TableCell>
                       <TableCell align="right">{formatAmount(record.pso_deposited)}</TableCell>
                       <TableCell align="right">{formatAmount(record.pso_consumed)}</TableCell>

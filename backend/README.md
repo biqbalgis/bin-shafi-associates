@@ -22,7 +22,9 @@ This Django backend exposes JWT-protected APIs for aviation fuel order managemen
 
 ## Email configuration
 
-Configure SMTP plus the fixed notification recipients in the backend environment:
+For local development, use `django.core.mail.backends.console.EmailBackend` so notifications print to the Django console instead of trying to connect to SMTP.
+
+Configure the email backend plus the fixed notification recipients in the backend environment:
 
 - `EMAIL_BACKEND`
 - `EMAIL_HOST`

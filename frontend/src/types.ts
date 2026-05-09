@@ -26,6 +26,11 @@ export type Client = {
   contact_phone: string;
   address: string;
   is_active: boolean;
+  total_orders: number;
+  completed_orders: number;
+  total_billed: string;
+  total_paid: string;
+  total_due: string;
 };
 
 export type Aircraft = {
@@ -124,6 +129,10 @@ export type Financial = {
 export type BalanceSheet = {
   id: number;
   date: string;
+  order: number | null;
+  order_ser_no: string;
+  client: number | null;
+  client_name: string | null;
   aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
@@ -135,6 +144,7 @@ export type BalanceSheet = {
   pso_deposits: PsoDeposit[];
   created_by: number | null;
   created_by_username: string | null;
+  client_payment_id: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -168,6 +178,7 @@ export type Order = {
   fuel_type: number;
   fuel_type_name: string;
   quantity_ltrs: string;
+  order_total_due: string | null;
   created_by: number;
   created_by_name: string;
   created_at: string;

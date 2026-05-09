@@ -43,6 +43,14 @@ export default function App() {
           }
         />
         <Route
+          path="balance-sheet/:orderId"
+          element={
+            <RoleRoute allowedRoles={["ADMIN"]}>
+              <BalanceSheetPage />
+            </RoleRoute>
+          }
+        />
+        <Route
           path="balance-sheet/overview"
           element={
             <RoleRoute allowedRoles={["ADMIN"]}>

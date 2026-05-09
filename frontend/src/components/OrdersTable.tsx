@@ -1,4 +1,5 @@
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
+import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import {
   Button,
@@ -155,15 +156,26 @@ export default function OrdersTable({
                     History
                   </Button>
                   {role === "ADMIN" && (
-                    <Button
-                      component={Link}
-                      to={`/financials/${order.id}`}
-                      size="small"
-                      variant="contained"
-                      startIcon={<PaymentsRoundedIcon />}
-                    >
-                      Financials
-                    </Button>
+                    <>
+                      <Button
+                        component={Link}
+                        to={`/financials/${order.id}`}
+                        size="small"
+                        variant="contained"
+                        startIcon={<PaymentsRoundedIcon />}
+                      >
+                        Financials
+                      </Button>
+                      <Button
+                        component={Link}
+                        to={`/balance-sheet/${order.id}`}
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ReceiptLongRoundedIcon />}
+                      >
+                        Balance Sheet
+                      </Button>
+                    </>
                   )}
                 </Stack>
               </TableCell>

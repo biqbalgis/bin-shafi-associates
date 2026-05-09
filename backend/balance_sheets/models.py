@@ -6,7 +6,14 @@ from django.utils import timezone
 
 
 class BalanceSheet(models.Model):
-    date = models.DateField(default=timezone.localdate, unique=True)
+    date = models.DateField(default=timezone.localdate)
+    order = models.OneToOneField(
+        "orders.Order",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="balance_sheet",
+    )
     aviation_dr_no = models.CharField(max_length=100, blank=True)
     aviation_total_due = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     aviation_paid = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
@@ -23,11 +30,25 @@ class BalanceSheet(models.Model):
         blank=True,
         related_name="balance_sheets",
     )
+    client_payment = models.OneToOneField(
+        "clients.ClientPayment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="balance_sheet_record",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ("-date", "-updated_at")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("date",),
+                condition=models.Q(order__isnull=True),
+                name="unique_daily_balance_sheet_date",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"Balance sheet for {self.date.isoformat()}"
@@ -60,11 +81,11 @@ class BalanceSheet(models.Model):
 
     @classmethod
     def rebuild_chain(cls, start_date=None):
-        queryset = cls.objects.prefetch_related("pso_deposits").order_by("date", "created_at", "pk")
+        queryset = cls.objects.filter(order__isnull=True).prefetch_related("pso_deposits").order_by("date", "created_at", "pk")
         previous_balance = Decimal("0.00")
         if start_date is not None:
             previous_record = (
-                cls.objects.filter(date__lt=start_date)
+                cls.objects.filter(order__isnull=True, date__lt=start_date)
                 .order_by("-date", "-created_at", "-pk")
                 .first()
             )

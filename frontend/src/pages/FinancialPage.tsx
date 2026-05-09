@@ -122,10 +122,10 @@ function buildInvoiceFields(order: Order, financial: Financial): InvoiceField[] 
     { label: "Date", value: formatDate(financial.updated_at || order.date) },
     { label: "DR Number", value: financial.dr_no || order.dr_no || "--" },
     { label: "Qty", value: formatMoney(order.quantity_ltrs) },
-    { label: "BSA Rate", value: formatMoney(financial.bsa_rate) },
-    { label: "BSA Fuel Charges", value: formatMoney(financial.bsa_fueling_charges) },
-    { label: "BSA GST", value: formatMoney(financial.bsa_gst) },
-    { label: "BSA Total", value: formatMoney(financial.bsa_total_price) },
+    { label: "Rate", value: formatMoney(financial.bsa_rate) },
+    { label: "Fuel Charges", value: formatMoney(financial.bsa_fueling_charges) },
+    { label: "GST", value: formatMoney(financial.bsa_gst) },
+    { label: "Total", value: formatMoney(financial.bsa_total_price) },
   ];
 }
 
