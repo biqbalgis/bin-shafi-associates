@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
+from django.utils import timezone
 
 
 class Financial(models.Model):
@@ -22,6 +23,15 @@ class Financial(models.Model):
     bsa_gst = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     bsa_total_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     profit = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    is_locked = models.BooleanField(default=False)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_financials",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -76,6 +86,18 @@ class Financial(models.Model):
             self.bsa_rate,
         ]
         return all(value not in (None, "") for value in required_values)
+
+    def approve(self, user):
+        self.is_locked = True
+        self.approved_at = timezone.now()
+        self.approved_by = user
+        self.save(update_fields=["is_locked", "approved_at", "approved_by", "updated_at"])
+
+    def unlock_for_editing(self):
+        self.is_locked = False
+        self.approved_at = None
+        self.approved_by = None
+        self.save(update_fields=["is_locked", "approved_at", "approved_by", "updated_at"])
 
     def save(self, *args, **kwargs):
         self.bsa_invoice = self._generate_bsa_invoice()

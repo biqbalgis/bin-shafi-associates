@@ -42,6 +42,7 @@ export default function AppShell() {
       : []),
     ...(user?.role === "ADMIN"
       ? [
+          { label: "All Invoices", icon: <ReceiptLongRoundedIcon />, path: "/invoices" },
           { label: "Balance Sheet", icon: <AccountBalanceWalletRoundedIcon />, path: "/balance-sheet" },
           { label: "Balance Overview", icon: <InsightsRoundedIcon />, path: "/balance-sheet/overview" },
           { label: "User Management", icon: <GroupRoundedIcon />, path: "/admin/users" },

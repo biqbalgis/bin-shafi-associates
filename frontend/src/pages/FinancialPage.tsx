@@ -18,7 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { createFinancial, updateFinancial } from "../api/financials";
+import { approveFinancial, createFinancial, unlockFinancial, updateFinancial } from "../api/financials";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
 import type { Client, Financial, Order } from "../types";
@@ -42,6 +42,11 @@ type InvoiceField = {
 const FIXED_FUELING_CHARGES = "5100.00";
 const COMPANY_NAME = "Bin Shafi Associates Private Limited";
 const COMPANY_LOGO_PATH = "/binshafi-logo.png";
+const COMPANY_CONTACT = {
+  address: "Address not configured",
+  phone: "Phone not configured",
+  email: "Email not configured",
+};
 
 const emptyForm: FinancialForm = {
   dr_no: "",
@@ -119,7 +124,7 @@ function generateBsaInvoice(orderSerNo: string | undefined) {
 function buildInvoiceFields(order: Order, financial: Financial): InvoiceField[] {
   return [
     { label: "Invoice Number", value: financial.bsa_invoice || generateBsaInvoice(order.ser_no) || "--" },
-    { label: "Date", value: formatDate(financial.updated_at || order.date) },
+    { label: "Date", value: formatDate(financial.approved_at || financial.updated_at || order.date) },
     { label: "DR Number", value: financial.dr_no || order.dr_no || "--" },
     { label: "Qty", value: formatMoney(order.quantity_ltrs) },
     { label: "Rate", value: formatMoney(financial.bsa_rate) },
@@ -140,6 +145,18 @@ async function loadImageAsDataUrl(path: string) {
   });
 }
 
+function drawWrappedRightAlignedText(doc: InstanceType<typeof import("jspdf").jsPDF>, lines: string[], x: number, y: number, maxWidth: number, lineHeight: number) {
+  let currentY = y;
+  lines.forEach((line) => {
+    const wrappedLines = doc.splitTextToSize(line, maxWidth);
+    wrappedLines.forEach((wrappedLine: string) => {
+      doc.text(wrappedLine, x, currentY, { align: "right" });
+      currentY += lineHeight;
+    });
+  });
+  return currentY;
+}
+
 export default function FinancialPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -148,6 +165,8 @@ export default function FinancialPage() {
   const [savedFinancial, setSavedFinancial] = useState<Financial | null>(null);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [savingFinancial, setSavingFinancial] = useState(false);
+  const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve" | "unlock">("");
   const [form, setForm] = useState<FinancialForm>(emptyForm);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -206,21 +225,43 @@ export default function FinancialPage() {
   const profitPreview = ((bsaPrice ?? 0) - (psoPrice ?? 0)).toFixed(2);
   const activeFinancial = savedFinancial ?? order?.financial ?? null;
   const canGenerateInvoice = Boolean(order && activeFinancial);
+  const isInvoiceLocked = Boolean(activeFinancial?.is_locked);
 
   const invoiceFields = order && activeFinancial ? buildInvoiceFields(order, activeFinancial) : [];
-  const invoiceHeader = {
+  const companyHeader = {
+    name: COMPANY_NAME,
+    address: COMPANY_CONTACT.address,
+    phone: COMPANY_CONTACT.phone,
+    email: COMPANY_CONTACT.email,
+  };
+  const clientHeader = {
+    name: invoiceClient?.name || order?.client_name || "Client not configured",
     address: invoiceClient?.address || "Address not configured",
     phone: invoiceClient?.contact_phone || "Phone not configured",
     email: invoiceClient?.contact_email || "Email not configured",
   };
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function syncFinancialState(response: Financial) {
+    setSavedFinancial(response);
+    setOrder((current) => (current ? { ...current, financial: response, dr_no: response.dr_no || current.dr_no } : current));
+    setForm((current) => ({
+      ...current,
+      dr_no: response.dr_no || current.dr_no,
+      digital_invoice: response.digital_invoice || current.digital_invoice,
+      pso_invoice: response.pso_invoice || current.pso_invoice,
+      pso_rate: response.pso_rate ?? "",
+      fueling_charges: response.fueling_charges ?? FIXED_FUELING_CHARGES,
+      bsa_invoice: response.bsa_invoice || current.bsa_invoice,
+      bsa_rate: response.bsa_rate ?? "",
+      bsa_fueling_charges: response.bsa_fueling_charges ?? FIXED_FUELING_CHARGES,
+    }));
+  }
+
+  async function persistFinancial(showSuccessMessage = true) {
     if (!order) {
-      return;
+      return null;
     }
-    setError("");
-    setSuccess("");
+    setSavingFinancial(true);
     try {
       const payload = {
         order: order.id,
@@ -229,22 +270,67 @@ export default function FinancialPage() {
         pso_price: formatDerivedAmount(psoPrice),
         bsa_price: formatDerivedAmount(bsaPrice),
       };
-      const response = order.financial
-        ? await updateFinancial(order.financial.id, payload)
+      const financialId = savedFinancial?.id ?? order.financial?.id;
+      const response = financialId
+        ? await updateFinancial(financialId, payload)
         : await createFinancial(payload);
-
-      setSavedFinancial(response);
-      setOrder((current) => (current ? { ...current, financial: response, dr_no: response.dr_no || current.dr_no } : current));
-      setForm((current) => ({
-        ...current,
-        dr_no: response.dr_no || current.dr_no,
-        fueling_charges: response.fueling_charges ?? FIXED_FUELING_CHARGES,
-        bsa_invoice: response.bsa_invoice || current.bsa_invoice,
-        bsa_fueling_charges: response.bsa_fueling_charges ?? FIXED_FUELING_CHARGES,
-      }));
-      setSuccess("Financials saved. You can now generate the invoice preview and download the PDF.");
+      syncFinancialState(response);
+      if (showSuccessMessage) {
+        setSuccess("Financials saved. You can now generate the invoice preview and download the PDF.");
+      }
+      return response;
     } catch {
       setError("Unable to save financials. Confirm order state and numeric values.");
+      return null;
+    } finally {
+      setSavingFinancial(false);
+    }
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setSuccess("");
+    await persistFinancial();
+  }
+
+  async function handleApproveInvoice() {
+    if (!order) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    const persisted = await persistFinancial(false);
+    if (!persisted) {
+      return;
+    }
+    setInvoiceActionLoading("approve");
+    try {
+      const response = await approveFinancial(persisted.id);
+      syncFinancialState(response);
+      setSuccess("Invoice approved and locked.");
+    } catch {
+      setError("Unable to approve the invoice.");
+    } finally {
+      setInvoiceActionLoading("");
+    }
+  }
+
+  async function handleUnlockInvoice() {
+    if (!activeFinancial) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setInvoiceActionLoading("unlock");
+    try {
+      const response = await unlockFinancial(activeFinancial.id);
+      syncFinancialState(response);
+      setSuccess("Invoice unlocked. You can edit and save it again.");
+    } catch {
+      setError("Unable to unlock the invoice.");
+    } finally {
+      setInvoiceActionLoading("");
     }
   }
 
@@ -262,23 +348,45 @@ export default function FinancialPage() {
       let cursorY = 18;
 
       doc.addImage(logoDataUrl, "PNG", margin, cursorY - 6, 28, 28);
+      const companyBlockY = cursorY + 28;
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.text(COMPANY_NAME, 50, cursorY + 2);
+      doc.setFontSize(12);
+      doc.text(companyHeader.name, margin, companyBlockY);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
 
-      const headerLines = [
-        `Address: ${invoiceHeader.address}`,
-        `Phone: ${invoiceHeader.phone}`,
-        `Email: ${invoiceHeader.email}`,
+      const companyLines = [
+        `Address: ${companyHeader.address}`,
+        `Phone: ${companyHeader.phone}`,
+        `Email: ${companyHeader.email}`,
       ];
-      headerLines.forEach((line, index) => {
-        const wrapped = doc.splitTextToSize(line, pageWidth - 66);
-        doc.text(wrapped, 50, cursorY + 9 + index * 6);
+      let companyBottomY = companyBlockY + 6;
+      companyLines.forEach((line) => {
+        const wrappedLines = doc.splitTextToSize(line, 78);
+        doc.text(wrappedLines, margin, companyBottomY);
+        companyBottomY += wrappedLines.length * 5;
       });
 
-      cursorY = 56;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Client Details", pageWidth - margin, cursorY + 2, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const clientBottomY = drawWrappedRightAlignedText(
+        doc,
+        [
+          `Name: ${clientHeader.name}`,
+          `Email: ${clientHeader.email}`,
+          `Address: ${clientHeader.address}`,
+          `Phone: ${clientHeader.phone}`,
+        ],
+        pageWidth - margin,
+        cursorY + 9,
+        78,
+        5,
+      );
+
+      cursorY = Math.max(companyBottomY, clientBottomY, cursorY + 22) + 6;
       doc.setDrawColor(24, 49, 83);
       doc.setLineWidth(0.6);
       doc.line(margin, cursorY, pageWidth - margin, cursorY);
@@ -333,6 +441,11 @@ export default function FinancialPage() {
 
         {error && <Alert severity="error">{error}</Alert>}
         {success && <Alert severity="success">{success}</Alert>}
+        {isInvoiceLocked && activeFinancial && (
+          <Alert severity="info">
+            Invoice is approved and read only. Approved on {formatDate(activeFinancial.approved_at)} by {activeFinancial.approved_by_name || "an admin"}.
+          </Alert>
+        )}
 
         <Card>
           <CardContent>
@@ -345,10 +458,22 @@ export default function FinancialPage() {
                 }}
               >
                 <Box>
-                  <TextField label="DR No" value={form.dr_no} onChange={(event) => setForm((current) => ({ ...current, dr_no: event.target.value }))} fullWidth />
+                  <TextField
+                    label="DR No"
+                    value={form.dr_no}
+                    onChange={(event) => setForm((current) => ({ ...current, dr_no: event.target.value }))}
+                    fullWidth
+                    disabled={isInvoiceLocked}
+                  />
                 </Box>
                 <Box>
-                  <TextField label="Digital DR" value={form.digital_invoice} onChange={(event) => setForm((current) => ({ ...current, digital_invoice: event.target.value }))} fullWidth />
+                  <TextField
+                    label="Digital DR"
+                    value={form.digital_invoice}
+                    onChange={(event) => setForm((current) => ({ ...current, digital_invoice: event.target.value }))}
+                    fullWidth
+                    disabled={isInvoiceLocked}
+                  />
                 </Box>
                 <Box>
                   <TextField label="Quantity" value={order?.quantity_ltrs ?? ""} InputProps={{ readOnly: true }} fullWidth />
@@ -367,10 +492,23 @@ export default function FinancialPage() {
                   }}
                 >
                   <Box>
-                    <TextField label="PSO Invoice" value={form.pso_invoice} onChange={(event) => setForm((current) => ({ ...current, pso_invoice: event.target.value }))} fullWidth />
+                    <TextField
+                      label="PSO Invoice"
+                      value={form.pso_invoice}
+                      onChange={(event) => setForm((current) => ({ ...current, pso_invoice: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                    />
                   </Box>
                   <Box>
-                    <TextField label="PSO Rate" type="number" value={form.pso_rate} onChange={(event) => setForm((current) => ({ ...current, pso_rate: event.target.value }))} fullWidth />
+                    <TextField
+                      label="PSO Rate"
+                      type="number"
+                      value={form.pso_rate}
+                      onChange={(event) => setForm((current) => ({ ...current, pso_rate: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                    />
                   </Box>
                   <Box>
                     <TextField label="PSO Price" value={formatDerivedAmount(psoPrice)} InputProps={{ readOnly: true }} fullWidth />
@@ -402,7 +540,14 @@ export default function FinancialPage() {
                     <TextField label="BSA Invoice" value={form.bsa_invoice} InputProps={{ readOnly: true }} fullWidth />
                   </Box>
                   <Box>
-                    <TextField label="BSA Price / Rate" type="number" value={form.bsa_rate} onChange={(event) => setForm((current) => ({ ...current, bsa_rate: event.target.value }))} fullWidth />
+                    <TextField
+                      label="BSA Price / Rate"
+                      type="number"
+                      value={form.bsa_rate}
+                      onChange={(event) => setForm((current) => ({ ...current, bsa_rate: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                    />
                   </Box>
                   <Box>
                     <TextField label="BSA Price" value={formatDerivedAmount(bsaPrice)} InputProps={{ readOnly: true }} fullWidth />
@@ -435,9 +580,30 @@ export default function FinancialPage() {
                 <Button variant="outlined" onClick={() => navigate("/orders")}>
                   Cancel
                 </Button>
-                <Button type="submit" variant="contained">
-                  Save Financials
-                </Button>
+                {activeFinancial && isInvoiceLocked ? (
+                  <Button
+                    variant="contained"
+                    onClick={handleUnlockInvoice}
+                    disabled={invoiceActionLoading === "unlock"}
+                  >
+                    {invoiceActionLoading === "unlock" ? "Unlocking..." : "Edit Invoice"}
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="submit" variant="contained" disabled={savingFinancial || isInvoiceLocked}>
+                      {savingFinancial ? "Saving..." : "Save Financials"}
+                    </Button>
+                    {activeFinancial && (
+                      <Button
+                        variant="outlined"
+                        onClick={handleApproveInvoice}
+                        disabled={savingFinancial || invoiceActionLoading === "approve"}
+                      >
+                        {invoiceActionLoading === "approve" ? "Approving..." : "Approve Invoice"}
+                      </Button>
+                    )}
+                  </>
+                )}
                 {canGenerateInvoice && (
                   <Button
                     variant="outlined"
@@ -476,24 +642,34 @@ export default function FinancialPage() {
               <Stack spacing={3}>
                 <Box
                   sx={{
-                    display: "flex",
-                    gap: 2,
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
+                    display: "grid",
+                    gap: 3,
+                    gridTemplateColumns: { xs: "1fr", sm: "repeat(2, minmax(0, 1fr))" },
+                    alignItems: "start",
                   }}
                 >
-                  <Box
-                    component="img"
-                    src={COMPANY_LOGO_PATH}
-                    alt="Bin Shafi logo"
-                    sx={{ width: 120, height: "auto", objectFit: "contain" }}
-                  />
-                  <Stack spacing={0.5} sx={{ maxWidth: 420, textAlign: { xs: "left", md: "right" } }}>
-                    <Typography variant="h6">{COMPANY_NAME}</Typography>
-                    <Typography color="text.secondary">{invoiceHeader.address}</Typography>
-                    <Typography color="text.secondary">Phone: {invoiceHeader.phone}</Typography>
-                    <Typography color="text.secondary">Email: {invoiceHeader.email}</Typography>
+                  <Stack spacing={1.5} alignItems="flex-start">
+                    <Box
+                      component="img"
+                      src={COMPANY_LOGO_PATH}
+                      alt="Bin Shafi logo"
+                      sx={{ width: 120, height: "auto", objectFit: "contain" }}
+                    />
+                    <Stack spacing={0.5}>
+                      <Typography variant="h6">{companyHeader.name}</Typography>
+                      <Typography color="text.secondary">{companyHeader.address}</Typography>
+                      <Typography color="text.secondary">Phone: {companyHeader.phone}</Typography>
+                      <Typography color="text.secondary">Email: {companyHeader.email}</Typography>
+                    </Stack>
+                  </Stack>
+                  <Stack spacing={0.5} sx={{ textAlign: { xs: "left", sm: "right" }, alignItems: { xs: "flex-start", sm: "flex-end" } }}>
+                    <Typography variant="overline" color="text.secondary">
+                      Client Details
+                    </Typography>
+                    <Typography variant="h6">{clientHeader.name}</Typography>
+                    <Typography color="text.secondary">Email: {clientHeader.email}</Typography>
+                    <Typography color="text.secondary">Address: {clientHeader.address}</Typography>
+                    <Typography color="text.secondary">Phone: {clientHeader.phone}</Typography>
                   </Stack>
                 </Box>
 

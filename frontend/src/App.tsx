@@ -8,6 +8,7 @@ import BalanceSheetPage from "./pages/BalanceSheetPage";
 import CreateOrderPage from "./pages/CreateOrderPage";
 import DashboardPage from "./pages/DashboardPage";
 import FinancialPage from "./pages/FinancialPage";
+import InvoicesPage from "./pages/InvoicesPage";
 import LoginPage from "./pages/LoginPage";
 import OrdersPage from "./pages/OrdersPage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -63,6 +64,14 @@ export default function App() {
           element={
             <RoleRoute allowedRoles={["ADMIN"]}>
               <FinancialPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="invoices"
+          element={
+            <RoleRoute allowedRoles={["ADMIN"]}>
+              <InvoicesPage />
             </RoleRoute>
           }
         />

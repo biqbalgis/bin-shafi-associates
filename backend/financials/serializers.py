@@ -7,6 +7,10 @@ from .models import Financial
 
 class FinancialSerializer(serializers.ModelSerializer):
     order_ser_no = serializers.CharField(source="order.ser_no", read_only=True)
+    order_date = serializers.DateField(source="order.date", read_only=True)
+    client = serializers.IntegerField(source="order.client_id", read_only=True)
+    client_name = serializers.CharField(source="order.client.name", read_only=True)
+    approved_by_name = serializers.CharField(source="approved_by.username", read_only=True)
 
     class Meta:
         model = Financial
@@ -14,6 +18,9 @@ class FinancialSerializer(serializers.ModelSerializer):
             "id",
             "order",
             "order_ser_no",
+            "order_date",
+            "client",
+            "client_name",
             "dr_no",
             "digital_invoice",
             "pso_invoice",
@@ -29,10 +36,17 @@ class FinancialSerializer(serializers.ModelSerializer):
             "bsa_gst",
             "bsa_total_price",
             "profit",
+            "is_locked",
+            "approved_at",
+            "approved_by",
+            "approved_by_name",
             "created_at",
             "updated_at",
         )
         read_only_fields = (
+            "order_date",
+            "client",
+            "client_name",
             "pso_price",
             "fueling_charges",
             "bsa_invoice",
@@ -43,6 +57,10 @@ class FinancialSerializer(serializers.ModelSerializer):
             "bsa_gst",
             "bsa_total_price",
             "profit",
+            "is_locked",
+            "approved_at",
+            "approved_by",
+            "approved_by_name",
             "created_at",
             "updated_at",
         )
@@ -51,6 +69,8 @@ class FinancialSerializer(serializers.ModelSerializer):
         order = attrs.get("order") or getattr(self.instance, "order", None)
         if order and order.status == OrderStatus.CANCELED:
             raise serializers.ValidationError({"order": "Financials cannot be attached to a canceled order."})
+        if self.instance and self.instance.is_locked:
+            raise serializers.ValidationError({"detail": "Approved invoice is locked. Use Edit Invoice to unlock it first."})
         return attrs
 
     def _sync_order_dr_no(self, financial: Financial):

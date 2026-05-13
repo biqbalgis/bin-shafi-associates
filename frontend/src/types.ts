@@ -107,6 +107,9 @@ export type Financial = {
   id: number;
   order: number;
   order_ser_no: string;
+  order_date: string;
+  client: number;
+  client_name: string;
   dr_no: string;
   digital_invoice: string;
   pso_invoice: string;
@@ -122,6 +125,10 @@ export type Financial = {
   bsa_gst: string | null;
   bsa_total_price: string | null;
   profit: string;
+  is_locked: boolean;
+  approved_at: string | null;
+  approved_by: number | null;
+  approved_by_name: string | null;
   created_at: string;
   updated_at: string;
 };
