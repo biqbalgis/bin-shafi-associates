@@ -62,10 +62,19 @@ class Financial(models.Model):
             return None
         return self._quantize(price * self.GST_RATE)
 
-    def _calculate_total(self, price: Decimal | None, gst: Decimal | None) -> Decimal | None:
-        if price is None and gst is None:
+    def _calculate_total(
+        self,
+        price: Decimal | None,
+        fueling_charges: Decimal | None,
+        gst: Decimal | None,
+    ) -> Decimal | None:
+        if price is None and fueling_charges is None and gst is None:
             return None
-        subtotal = (price or Decimal("0.00")) + (gst or Decimal("0.00"))
+        subtotal = (
+            (price or Decimal("0.00"))
+            + (fueling_charges or Decimal("0.00"))
+            + (gst or Decimal("0.00"))
+        )
         return self._quantize(subtotal)
 
     def _generate_bsa_invoice(self) -> str:
@@ -107,7 +116,15 @@ class Financial(models.Model):
         self.bsa_price = self._calculate_price(self.bsa_rate)
         self.pso_gst = self._calculate_gst(self.pso_price)
         self.bsa_gst = self._calculate_gst(self.bsa_price)
-        self.pso_total_price = self._calculate_total(self.pso_price, self.pso_gst)
-        self.bsa_total_price = self._calculate_total(self.bsa_price, self.bsa_gst)
+        self.pso_total_price = self._calculate_total(
+            self.pso_price,
+            self.fueling_charges,
+            self.pso_gst,
+        )
+        self.bsa_total_price = self._calculate_total(
+            self.bsa_price,
+            self.bsa_fueling_charges,
+            self.bsa_gst,
+        )
         self.profit = self.calculate_profit()
         super().save(*args, **kwargs)

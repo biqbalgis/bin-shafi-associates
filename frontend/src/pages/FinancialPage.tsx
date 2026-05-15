@@ -107,11 +107,12 @@ function calculateGst(price: number | null) {
   return price * 0.18;
 }
 
-function calculateTotal(price: number | null, gst: number | null) {
-  if (price === null && gst === null) {
+function calculateTotal(price: number | null, fuelingCharges: string, gst: number | null) {
+  const numericFuelingCharges = parseNumeric(fuelingCharges);
+  if (price === null && numericFuelingCharges === null && gst === null) {
     return null;
   }
-  return (price ?? 0) + (gst ?? 0);
+  return (price ?? 0) + (numericFuelingCharges ?? 0) + (gst ?? 0);
 }
 
 function generateBsaInvoice(orderSerNo: string | undefined) {
@@ -220,8 +221,8 @@ export default function FinancialPage() {
   const bsaPrice = calculatePrice(form.bsa_rate, quantity);
   const psoGst = calculateGst(psoPrice);
   const bsaGst = calculateGst(bsaPrice);
-  const psoTotalPrice = calculateTotal(psoPrice, psoGst);
-  const bsaTotalPrice = calculateTotal(bsaPrice, bsaGst);
+  const psoTotalPrice = calculateTotal(psoPrice, form.fueling_charges, psoGst);
+  const bsaTotalPrice = calculateTotal(bsaPrice, form.bsa_fueling_charges, bsaGst);
   const profitPreview = ((bsaPrice ?? 0) - (psoPrice ?? 0)).toFixed(2);
   const activeFinancial = savedFinancial ?? order?.financial ?? null;
   const canGenerateInvoice = Boolean(order && activeFinancial);
