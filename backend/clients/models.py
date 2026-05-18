@@ -4,6 +4,13 @@ from django.db import models
 from django.utils import timezone
 
 
+class ClientPaymentMethod(models.TextChoices):
+    CHEQUE = "CHEQUE", "Cheque"
+    ACCOUNT_TRANSFER = "ACCOUNT_TRANSFER", "Account Transfer"
+    CASH = "CASH", "Cash"
+    OTHER = "OTHER", "Other"
+
+
 class Client(models.Model):
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=50, unique=True)
@@ -26,6 +33,7 @@ class ClientPayment(models.Model):
     order = models.ForeignKey("orders.Order", on_delete=models.SET_NULL, null=True, blank=True, related_name="client_payments")
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     date = models.DateField(default=timezone.localdate)
+    payment_method = models.CharField(max_length=30, choices=ClientPaymentMethod.choices, blank=True)
     reference = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(

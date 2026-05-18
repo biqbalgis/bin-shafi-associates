@@ -1,3 +1,4 @@
+from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Count, DecimalField, ExpressionWrapper, F, Min, OuterRef, Q, Subquery, Sum, Value
@@ -67,7 +68,8 @@ def build_client_statement(client: Client) -> dict:
         .annotate(completed_at=Min("audit_logs__changed_at", filter=Q(audit_logs__new_status=OrderStatus.COMPLETED)))
         .order_by("date", "created_at")
     )
-    payments = client.payments.select_related("order", "created_by").order_by("date", "created_at", "id")
+    payments = client.payments.select_related("order", "order__financial", "created_by").order_by("date", "created_at", "id")
+    payments_by_order_id: dict[int, list[dict]] = defaultdict(list)
 
     entries = []
 
@@ -79,8 +81,11 @@ def build_client_statement(client: Client) -> dict:
                 "date": order.date,
                 "order_id": order.id,
                 "order_ser_no": order.ser_no,
+                "dr_no": (order.dr_no or "").strip(),
+                "invoice_no": (order.financial.bsa_invoice or "").strip(),
                 "reference": order.dr_no or order.financial.bsa_invoice or order.ser_no,
                 "notes": f"Completed order {order.ser_no}",
+                "payment_method": "",
                 "billed_amount": billed_amount,
                 "paid_amount": quantize_money(ZERO),
                 "_sort_created_at": order.completed_at or order.updated_at,
@@ -91,14 +96,35 @@ def build_client_statement(client: Client) -> dict:
 
     for payment in payments:
         paid_amount = quantize_money(payment.amount)
+        payment_invoice_no = ""
+        if payment.order_id:
+            try:
+                payment_invoice_no = (payment.order.financial.bsa_invoice or "").strip()
+            except Financial.DoesNotExist:
+                payment_invoice_no = ""
+        payment_data = {
+            "id": payment.id,
+            "date": payment.date,
+            "amount": paid_amount,
+            "payment_method": payment.payment_method,
+            "reference": payment.reference,
+            "notes": payment.notes,
+            "created_by_username": payment.created_by.username if payment.created_by_id else None,
+            "created_at": payment.created_at,
+        }
+        if payment.order_id:
+            payments_by_order_id[payment.order_id].append(payment_data)
         entries.append(
             {
                 "entry_type": "PAYMENT",
                 "date": payment.date,
                 "order_id": payment.order_id,
                 "order_ser_no": payment.order.ser_no if payment.order_id else "",
+                "dr_no": (payment.order.dr_no or "").strip() if payment.order_id else "",
+                "invoice_no": payment_invoice_no,
                 "reference": payment.reference,
                 "notes": payment.notes,
+                "payment_method": payment.payment_method,
                 "billed_amount": quantize_money(ZERO),
                 "paid_amount": paid_amount,
                 "_sort_created_at": payment.created_at,
@@ -119,11 +145,45 @@ def build_client_statement(client: Client) -> dict:
                 "date": entry["date"],
                 "order_id": entry["order_id"],
                 "order_ser_no": entry["order_ser_no"],
+                "dr_no": entry["dr_no"],
+                "invoice_no": entry["invoice_no"],
                 "reference": entry["reference"],
                 "notes": entry["notes"],
+                "payment_method": entry["payment_method"],
                 "billed_amount": entry["billed_amount"],
                 "paid_amount": entry["paid_amount"],
                 "balance_after": running_balance,
+            }
+        )
+
+    invoices = []
+    for order in completed_orders:
+        order_payments = payments_by_order_id.get(order.id, [])
+        invoice_amount = quantize_money(order.financial.bsa_total_price)
+        total_paid = quantize_money(sum((payment["amount"] for payment in order_payments), ZERO))
+        due_amount = quantize_money(invoice_amount - total_paid)
+        if total_paid <= ZERO:
+            payment_status = "UNPAID"
+        elif due_amount <= ZERO:
+            payment_status = "PAID"
+        else:
+            payment_status = "PARTIALLY_PAID"
+
+        invoices.append(
+            {
+                "order_id": order.id,
+                "order_ser_no": order.ser_no,
+                "order_date": order.date,
+                "completed_at": order.completed_at,
+                "dr_no": (order.dr_no or "").strip(),
+                "invoice_no": (order.financial.bsa_invoice or "").strip(),
+                "invoice_amount": invoice_amount,
+                "total_paid": total_paid,
+                "due_amount": due_amount,
+                "payment_status": payment_status,
+                "payment_count": len(order_payments),
+                "last_paid_date": order_payments[-1]["date"] if order_payments else None,
+                "payments": order_payments,
             }
         )
 
@@ -131,4 +191,5 @@ def build_client_statement(client: Client) -> dict:
         "client": client,
         "totals": get_client_totals(client),
         "entries": serialized_entries,
+        "invoices": invoices,
     }

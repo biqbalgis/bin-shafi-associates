@@ -66,6 +66,7 @@ class ClientBalanceTests(TestCase):
             client=self.client,
             amount=Decimal("1000.00"),
             date=date(2026, 5, 2),
+            payment_method="ACCOUNT_TRANSFER",
             reference="PAY-1",
             created_by=self.user,
         )
@@ -74,6 +75,7 @@ class ClientBalanceTests(TestCase):
             order=third_order,
             amount=Decimal("500.00"),
             date=date(2026, 5, 4),
+            payment_method="CHEQUE",
             reference="PAY-2",
             created_by=self.user,
         )
@@ -90,3 +92,7 @@ class ClientBalanceTests(TestCase):
         self.assertEqual(statement["entries"][-1]["balance_after"], Decimal("1500.00"))
         self.assertEqual(statement["entries"][0]["order_id"], first_order.id)
         self.assertEqual(statement["entries"][1]["order_id"], second_order.id)
+        self.assertEqual(len(statement["invoices"]), 3)
+        self.assertEqual(statement["invoices"][0]["payment_status"], "UNPAID")
+        self.assertEqual(statement["invoices"][2]["payment_status"], "PARTIALLY_PAID")
+        self.assertEqual(statement["invoices"][2]["payments"][0]["payment_method"], "CHEQUE")

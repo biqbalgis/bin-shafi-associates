@@ -21,6 +21,7 @@ class ClientPaymentSerializer(serializers.ModelSerializer):
             "order_ser_no",
             "amount",
             "date",
+            "payment_method",
             "reference",
             "notes",
             "created_by",
@@ -117,11 +118,41 @@ class ClientStatementEntrySerializer(serializers.Serializer):
     date = serializers.DateField()
     order_id = serializers.IntegerField(allow_null=True)
     order_ser_no = serializers.CharField(allow_blank=True)
+    dr_no = serializers.CharField(allow_blank=True)
+    invoice_no = serializers.CharField(allow_blank=True)
     reference = serializers.CharField(allow_blank=True)
     notes = serializers.CharField(allow_blank=True)
+    payment_method = serializers.CharField(allow_blank=True)
     billed_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     paid_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     balance_after = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class ClientStatementPaymentSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    date = serializers.DateField()
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    payment_method = serializers.CharField(allow_blank=True)
+    reference = serializers.CharField(allow_blank=True)
+    notes = serializers.CharField(allow_blank=True)
+    created_by_username = serializers.CharField(allow_null=True)
+    created_at = serializers.DateTimeField()
+
+
+class ClientInvoiceSummarySerializer(serializers.Serializer):
+    order_id = serializers.IntegerField()
+    order_ser_no = serializers.CharField()
+    order_date = serializers.DateField()
+    completed_at = serializers.DateTimeField(allow_null=True)
+    dr_no = serializers.CharField(allow_blank=True)
+    invoice_no = serializers.CharField(allow_blank=True)
+    invoice_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_paid = serializers.DecimalField(max_digits=14, decimal_places=2)
+    due_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    payment_status = serializers.CharField()
+    payment_count = serializers.IntegerField()
+    last_paid_date = serializers.DateField(allow_null=True)
+    payments = ClientStatementPaymentSerializer(many=True)
 
 
 class ClientBalanceTotalsSerializer(serializers.Serializer):
@@ -136,3 +167,4 @@ class ClientBalanceStatementSerializer(serializers.Serializer):
     client = ClientSerializer()
     totals = ClientBalanceTotalsSerializer()
     entries = ClientStatementEntrySerializer(many=True)
+    invoices = ClientInvoiceSummarySerializer(many=True)

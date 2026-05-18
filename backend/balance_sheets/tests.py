@@ -72,6 +72,9 @@ class OrderLinkedBalanceSheetTests(TestCase):
                     "date": "2026-05-09",
                     "aviation_dr_no": order.dr_no,
                     "aviation_paid": paid,
+                    "payment_method": "ACCOUNT_TRANSFER" if order == first_order else "CHEQUE",
+                    "payment_reference": f"PAY-{order.id}",
+                    "payment_notes": f"Payment received for {order.ser_no}",
                     "pso_consumed": "0",
                     "pso_deposits": [],
                 },
@@ -90,3 +93,5 @@ class OrderLinkedBalanceSheetTests(TestCase):
         self.assertEqual(first_order.balance_sheet.aviation_total_due, Decimal("100.00"))
         self.assertEqual(second_order.balance_sheet.aviation_paid, Decimal("50.00"))
         self.assertEqual(second_order.balance_sheet.client_payment.amount, Decimal("50.00"))
+        self.assertEqual(first_order.balance_sheet.client_payment.payment_method, "ACCOUNT_TRANSFER")
+        self.assertEqual(second_order.balance_sheet.client_payment.reference, f"PAY-{second_order.id}")

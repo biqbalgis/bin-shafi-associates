@@ -1,4 +1,5 @@
 export type UserRole = "CUSTOMER" | "MANAGER" | "ADMIN";
+export type ClientPaymentMethod = "" | "CHEQUE" | "ACCOUNT_TRANSFER" | "CASH" | "OTHER";
 
 export type User = {
   id: number;
@@ -144,6 +145,9 @@ export type BalanceSheet = {
   aviation_total_due: string;
   aviation_paid: string;
   aviation_balance: string;
+  payment_method: ClientPaymentMethod;
+  payment_reference: string;
+  payment_notes: string;
   pso_dr_no: string;
   pso_deposited: string;
   pso_consumed: string;
@@ -200,3 +204,60 @@ export type ListResponse<T> = {
   previous?: string | null;
   results?: T[];
 } | T[];
+
+export type ClientStatementEntry = {
+  entry_type: "ORDER" | "PAYMENT";
+  date: string;
+  order_id: number | null;
+  order_ser_no: string;
+  dr_no: string;
+  invoice_no: string;
+  reference: string;
+  notes: string;
+  payment_method: ClientPaymentMethod;
+  billed_amount: string;
+  paid_amount: string;
+  balance_after: string;
+};
+
+export type ClientStatementPayment = {
+  id: number;
+  date: string;
+  amount: string;
+  payment_method: ClientPaymentMethod;
+  reference: string;
+  notes: string;
+  created_by_username: string | null;
+  created_at: string;
+};
+
+export type ClientInvoiceSummary = {
+  order_id: number;
+  order_ser_no: string;
+  order_date: string;
+  completed_at: string | null;
+  dr_no: string;
+  invoice_no: string;
+  invoice_amount: string;
+  total_paid: string;
+  due_amount: string;
+  payment_status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+  payment_count: number;
+  last_paid_date: string | null;
+  payments: ClientStatementPayment[];
+};
+
+export type ClientBalanceTotals = {
+  total_orders: number;
+  completed_orders: number;
+  total_billed: string;
+  total_paid: string;
+  total_due: string;
+};
+
+export type ClientStatement = {
+  client: Client;
+  totals: ClientBalanceTotals;
+  entries: ClientStatementEntry[];
+  invoices: ClientInvoiceSummary[];
+};

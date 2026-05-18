@@ -1,10 +1,15 @@
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import KeyboardArrowUpRoundedIcon from "@mui/icons-material/KeyboardArrowUpRounded";
 import {
   Alert,
   Box,
   Button,
   Card,
   CardContent,
+  Chip,
+  Collapse,
   LinearProgress,
+  MenuItem,
   Stack,
   Table,
   TableBody,
@@ -12,37 +17,68 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { listBalanceSheets } from "../api/balanceSheets";
-import type { BalanceSheet } from "../types";
+import { getClientStatement } from "../api/clients";
+import { fetchClients } from "../api/dropdowns";
+import type { Client, ClientPaymentMethod, ClientStatement, ClientStatementPayment } from "../types";
 
-function parseAmount(value: string | number) {
+function parseAmount(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function formatAmount(value: string | number) {
-  return parseAmount(value).toFixed(2);
+function formatAmount(value: string | number | null | undefined) {
+  return parseAmount(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
-function formatPercent(numerator: number, denominator: number) {
-  if (denominator <= 0) {
-    return 0;
-  }
-  return Math.min(100, Math.max(0, (numerator / denominator) * 100));
-}
-
-function formatDepositSummary(record: BalanceSheet) {
-  if (record.pso_deposits.length === 0) {
+function formatDate(value: string | null | undefined) {
+  if (!value) {
     return "--";
   }
-  return record.pso_deposits
-    .map((deposit) => `${deposit.date}: ${formatAmount(deposit.amount)}${deposit.cheque_number ? ` (${deposit.cheque_number})` : ""}`)
-    .join(" | ");
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString();
+}
+
+function getPaymentMethodLabel(method: ClientPaymentMethod) {
+  switch (method) {
+    case "CHEQUE":
+      return "Cheque";
+    case "ACCOUNT_TRANSFER":
+      return "Account Transfer";
+    case "CASH":
+      return "Cash";
+    case "OTHER":
+      return "Other";
+    default:
+      return "Not recorded";
+  }
+}
+
+function getStatusColor(status: "UNPAID" | "PARTIALLY_PAID" | "PAID") {
+  switch (status) {
+    case "PAID":
+      return "success" as const;
+    case "PARTIALLY_PAID":
+      return "warning" as const;
+    default:
+      return "default" as const;
+  }
 }
 
 function SummaryCard({ label, value, caption }: { label: string; value: string; caption: string }) {
@@ -61,55 +97,119 @@ function SummaryCard({ label, value, caption }: { label: string; value: string; 
   );
 }
 
-export default function BalanceSheetOverviewPage() {
-  const [orderRecords, setOrderRecords] = useState<BalanceSheet[]>([]);
-  const [dailyRecords, setDailyRecords] = useState<BalanceSheet[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+function PaymentDetailTable({ payments }: { payments: ClientStatementPayment[] }) {
+  if (payments.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        No payments recorded for this invoice yet.
+      </Typography>
+    );
+  }
 
-  async function reloadData() {
-    setLoading(true);
+  return (
+    <TableContainer>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>Paid Date</TableCell>
+            <TableCell>Method</TableCell>
+            <TableCell>Reference</TableCell>
+            <TableCell>Notes</TableCell>
+            <TableCell align="right">Amount</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {payments.map((payment) => (
+            <TableRow key={payment.id} hover>
+              <TableCell>{formatDate(payment.date)}</TableCell>
+              <TableCell>{getPaymentMethodLabel(payment.payment_method)}</TableCell>
+              <TableCell>{payment.reference || "--"}</TableCell>
+              <TableCell>{payment.notes || "--"}</TableCell>
+              <TableCell align="right">{formatAmount(payment.amount)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
+export default function BalanceSheetOverviewPage() {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [statement, setStatement] = useState<ClientStatement | null>(null);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<number | null>(null);
+  const [loadingClients, setLoadingClients] = useState(true);
+  const [loadingStatement, setLoadingStatement] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadClients() {
+    setLoadingClients(true);
     setError("");
     try {
-      const [ordersPayload, dailyPayload] = await Promise.all([
-        listBalanceSheets({ record_type: "order" }),
-        listBalanceSheets({ record_type: "daily" }),
-      ]);
-      setOrderRecords(ordersPayload);
-      setDailyRecords(dailyPayload);
+      const payload = await fetchClients();
+      setClients(payload);
+      setSelectedClientId((current) => {
+        if (current && payload.some((client) => String(client.id) === current)) {
+          return current;
+        }
+        return payload[0] ? String(payload[0].id) : "";
+      });
     } catch {
-      setError("Unable to load balance-sheet history.");
+      setError("Unable to load clients for the balance overview.");
     } finally {
-      setLoading(false);
+      setLoadingClients(false);
+    }
+  }
+
+  async function loadStatement(clientId: number) {
+    setLoadingStatement(true);
+    setError("");
+    try {
+      const payload = await getClientStatement(clientId);
+      setStatement(payload);
+      setExpandedInvoiceId(null);
+    } catch {
+      setStatement(null);
+      setError("Unable to load the selected client's financial statement.");
+    } finally {
+      setLoadingStatement(false);
     }
   }
 
   useEffect(() => {
-    void reloadData();
+    void loadClients();
   }, []);
 
-  const latestOrderRecord = orderRecords[0];
-  const latestDailyRecord = dailyRecords[0];
-  const totalOrderDue = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_total_due), 0);
-  const totalOrderPaid = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_paid), 0);
-  const totalOrderBalance = orderRecords.reduce((sum, item) => sum + parseAmount(item.aviation_balance), 0);
-  const totalPsoAdded = dailyRecords.reduce(
-    (sum, item) => sum + item.pso_deposits.reduce((depositSum, deposit) => depositSum + parseAmount(deposit.amount), 0),
-    0,
+  useEffect(() => {
+    if (!selectedClientId) {
+      setStatement(null);
+      return;
+    }
+    void loadStatement(Number(selectedClientId));
+  }, [selectedClientId]);
+
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === Number(selectedClientId)) ?? null,
+    [clients, selectedClientId],
   );
-  const latestPsoBalance = latestDailyRecord ? parseAmount(latestDailyRecord.pso_balance) : 0;
+
+  const invoices = statement?.invoices ?? [];
+  const paidInvoices = invoices.filter((invoice) => invoice.payment_status === "PAID").length;
+  const partiallyPaidInvoices = invoices.filter((invoice) => invoice.payment_status === "PARTIALLY_PAID").length;
+  const unpaidInvoices = invoices.filter((invoice) => invoice.payment_status === "UNPAID").length;
 
   return (
     <Stack spacing={3}>
       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Box>
-          <Typography variant="h4">Balance Sheet Overview</Typography>
+          <Typography variant="h4">Client Balance Overview</Typography>
           <Typography color="text.secondary">
-            Review order-linked collections by DR number and the separate daily PSO ledger.
+            Select any client to review invoice totals, paid amounts, payment dates, methods, and outstanding dues.
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.5}>
-          <Button variant="outlined" onClick={() => void reloadData()} disabled={loading}>
+          <Button variant="outlined" onClick={() => void loadClients()} disabled={loadingClients || loadingStatement}>
             Refresh
           </Button>
           <Button component={Link} to="/balance-sheet" variant="outlined">
@@ -118,72 +218,16 @@ export default function BalanceSheetOverviewPage() {
         </Stack>
       </Box>
 
+      {(loadingClients || loadingStatement) && <LinearProgress />}
       {error && <Alert severity="error">{error}</Alert>}
 
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
-        <SummaryCard
-          label="Order Due"
-          value={formatAmount(totalOrderDue)}
-          caption={`Collected ${formatAmount(totalOrderPaid)} | Remaining ${formatAmount(totalOrderBalance)}`}
-        />
-        <SummaryCard
-          label="Tracked Orders"
-          value={String(orderRecords.length)}
-          caption={latestOrderRecord ? `Latest order record: ${latestOrderRecord.order_ser_no}` : "No order-linked balance sheets yet."}
-        />
-        <SummaryCard
-          label="PSO Added"
-          value={formatAmount(totalPsoAdded)}
-          caption={`Latest available PSO: ${formatAmount(latestDailyRecord?.pso_deposited ?? 0)} | Remaining balance: ${formatAmount(latestPsoBalance)}`}
-        />
-      </Stack>
-
       <Card>
         <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="h6">Latest Order Collection</Typography>
+              <Typography variant="h6">All Clients Snapshot</Typography>
               <Typography color="text.secondary">
-                {latestOrderRecord
-                  ? `Collection snapshot for ${latestOrderRecord.order_ser_no}.`
-                  : "Save an order-linked balance sheet from the Orders screen to populate this view."}
-              </Typography>
-            </Box>
-
-            {latestOrderRecord && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Stack spacing={1.25}>
-                    <Typography variant="subtitle1">{latestOrderRecord.order_ser_no} / {latestOrderRecord.client_name}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      DR {latestOrderRecord.aviation_dr_no || "--"} | Paid {formatAmount(latestOrderRecord.aviation_paid)} out of {formatAmount(latestOrderRecord.aviation_total_due)}
-                    </Typography>
-                    <LinearProgress
-                      variant="determinate"
-                      value={formatPercent(parseAmount(latestOrderRecord.aviation_paid), parseAmount(latestOrderRecord.aviation_total_due))}
-                      sx={{ height: 10, borderRadius: 999 }}
-                    />
-                    <Typography variant="body2">Balance: {formatAmount(latestOrderRecord.aviation_balance)}</Typography>
-                    {latestOrderRecord.order && (
-                      <Button component={Link} to={`/balance-sheet/${latestOrderRecord.order}`} variant="outlined" sx={{ alignSelf: "flex-start" }}>
-                        Open Order Balance
-                      </Button>
-                    )}
-                  </Stack>
-                </CardContent>
-              </Card>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="h6">Order Collections</Typography>
-              <Typography color="text.secondary">
-                One record per order, linked to the order DR number. Partial collections reduce the client’s overall outstanding amount.
+                Compare billed, paid, and due totals across clients, then open one client’s detailed statement below.
               </Typography>
             </Box>
 
@@ -191,41 +235,40 @@ export default function BalanceSheetOverviewPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Order</TableCell>
                     <TableCell>Client</TableCell>
-                    <TableCell>DR</TableCell>
-                    <TableCell align="right">Due</TableCell>
+                    <TableCell align="right">Orders</TableCell>
+                    <TableCell align="right">Completed</TableCell>
+                    <TableCell align="right">Billed</TableCell>
                     <TableCell align="right">Paid</TableCell>
-                    <TableCell align="right">Balance</TableCell>
+                    <TableCell align="right">Due</TableCell>
                     <TableCell align="right">Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {orderRecords.length === 0 && (
+                  {clients.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
-                        {loading ? "Loading order-linked balances..." : "No order-linked balance-sheet records found."}
+                      <TableCell colSpan={7} align="center">
+                        {loadingClients ? "Loading clients..." : "No active clients found."}
                       </TableCell>
                     </TableRow>
                   )}
-                  {orderRecords.map((record) => (
-                    <TableRow key={record.id} hover>
-                      <TableCell>{record.date}</TableCell>
-                      <TableCell>{record.order_ser_no || "--"}</TableCell>
-                      <TableCell>{record.client_name || "--"}</TableCell>
-                      <TableCell>{record.aviation_dr_no || "--"}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_total_due)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_paid)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.aviation_balance)}</TableCell>
+                  {clients.map((client) => (
+                    <TableRow key={client.id} hover selected={client.id === Number(selectedClientId)}>
+                      <TableCell>
+                        <Typography fontWeight={700}>{client.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {client.code}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">{client.total_orders}</TableCell>
+                      <TableCell align="right">{client.completed_orders}</TableCell>
+                      <TableCell align="right">{formatAmount(client.total_billed)}</TableCell>
+                      <TableCell align="right">{formatAmount(client.total_paid)}</TableCell>
+                      <TableCell align="right">{formatAmount(client.total_due)}</TableCell>
                       <TableCell align="right">
-                        {record.order ? (
-                          <Button component={Link} to={`/balance-sheet/${record.order}`} size="small" variant="outlined">
-                            Open
-                          </Button>
-                        ) : (
-                          "--"
-                        )}
+                        <Button size="small" variant={client.id === Number(selectedClientId) ? "contained" : "outlined"} onClick={() => setSelectedClientId(String(client.id))}>
+                          {client.id === Number(selectedClientId) ? "Selected" : "Open"}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -238,11 +281,169 @@ export default function BalanceSheetOverviewPage() {
 
       <Card>
         <CardContent>
+          <Stack spacing={2.5}>
+            <Box
+              sx={{
+                display: "grid",
+                gap: 2,
+                gridTemplateColumns: { xs: "1fr", lg: "minmax(280px, 360px) 1fr" },
+                alignItems: "start",
+              }}
+            >
+              <TextField
+                label="Selected Client"
+                select
+                value={selectedClientId}
+                onChange={(event) => setSelectedClientId(event.target.value)}
+                fullWidth
+              >
+                {clients.map((client) => (
+                  <MenuItem key={client.id} value={String(client.id)}>
+                    {client.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <Box>
+                <Typography variant="h6">{selectedClient?.name ?? "No client selected"}</Typography>
+                <Typography color="text.secondary">
+                  {selectedClient
+                    ? `${selectedClient.code} | ${selectedClient.contact_email || "No email"} | ${selectedClient.contact_phone || "No phone"}`
+                    : "Choose a client to load invoices and payments."}
+                </Typography>
+                {selectedClient?.address && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                    {selectedClient.address}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+
+            <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
+              <SummaryCard
+                label="Invoices"
+                value={`${paidInvoices} / ${invoices.length}`}
+                caption={`${partiallyPaidInvoices} partial | ${unpaidInvoices} unpaid`}
+              />
+              <SummaryCard
+                label="Total Billed"
+                value={formatAmount(statement?.totals.total_billed)}
+                caption={`${statement?.totals.completed_orders ?? 0} completed orders billed`}
+              />
+              <SummaryCard
+                label="Total Paid"
+                value={formatAmount(statement?.totals.total_paid)}
+                caption="All recorded client payments"
+              />
+              <SummaryCard
+                label="Current Due"
+                value={formatAmount(statement?.totals.total_due)}
+                caption="Outstanding amount for this client"
+              />
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="h6">Daily PSO Ledger</Typography>
+              <Typography variant="h6">Invoice Status</Typography>
               <Typography color="text.secondary">
-                Separate daily records for PSO deposits, consumption, and running balance.
+                Each completed order is treated as a client invoice. Expand a row to inspect payment date, method, reference, and notes.
+              </Typography>
+            </Box>
+
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell />
+                    <TableCell>Order Date</TableCell>
+                    <TableCell>Order</TableCell>
+                    <TableCell>Invoice</TableCell>
+                    <TableCell>DR</TableCell>
+                    <TableCell align="right">Invoice Total</TableCell>
+                    <TableCell align="right">Paid</TableCell>
+                    <TableCell align="right">Due</TableCell>
+                    <TableCell>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {invoices.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">
+                        {loadingStatement ? "Loading invoice status..." : "No completed invoices found for this client."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {invoices.map((invoice) => {
+                    const isExpanded = expandedInvoiceId === invoice.order_id;
+                    return (
+                      <Fragment key={invoice.order_id}>
+                        <TableRow hover>
+                          <TableCell width={64}>
+                            <Button size="small" variant="text" onClick={() => setExpandedInvoiceId(isExpanded ? null : invoice.order_id)}>
+                              {isExpanded ? <KeyboardArrowUpRoundedIcon /> : <KeyboardArrowDownRoundedIcon />}
+                            </Button>
+                          </TableCell>
+                          <TableCell>{formatDate(invoice.order_date)}</TableCell>
+                          <TableCell>{invoice.order_ser_no}</TableCell>
+                          <TableCell>{invoice.invoice_no || "--"}</TableCell>
+                          <TableCell>{invoice.dr_no || "--"}</TableCell>
+                          <TableCell align="right">{formatAmount(invoice.invoice_amount)}</TableCell>
+                          <TableCell align="right">{formatAmount(invoice.total_paid)}</TableCell>
+                          <TableCell align="right">{formatAmount(invoice.due_amount)}</TableCell>
+                          <TableCell>
+                            <Chip label={invoice.payment_status.replace(/_/g, " ")} color={getStatusColor(invoice.payment_status)} variant={invoice.payment_status === "UNPAID" ? "outlined" : "filled"} />
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell colSpan={9} sx={{ py: 0, borderBottom: isExpanded ? undefined : "none" }}>
+                            <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                              <Box sx={{ px: 2, py: 2 }}>
+                                <Stack spacing={2}>
+                                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                                    <SummaryCard
+                                      label="Payments"
+                                      value={String(invoice.payment_count)}
+                                      caption={`Last payment: ${formatDate(invoice.last_paid_date)}`}
+                                    />
+                                    <SummaryCard
+                                      label="Invoice Due"
+                                      value={formatAmount(invoice.due_amount)}
+                                      caption={`Invoice total ${formatAmount(invoice.invoice_amount)}`}
+                                    />
+                                  </Stack>
+                                  <PaymentDetailTable payments={invoice.payments} />
+                                  <Box>
+                                    <Button component={Link} to={`/balance-sheet/${invoice.order_id}`} size="small" variant="outlined">
+                                      Open Order Balance
+                                    </Button>
+                                  </Box>
+                                </Stack>
+                              </Box>
+                            </Collapse>
+                          </TableCell>
+                        </TableRow>
+                      </Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h6">Client Ledger</Typography>
+              <Typography color="text.secondary">
+                Running ledger of completed invoices and recorded payments for the selected client.
               </Typography>
             </Box>
 
@@ -251,29 +452,37 @@ export default function BalanceSheetOverviewPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Date</TableCell>
-                    <TableCell>PSO DR</TableCell>
-                    <TableCell align="right">PSO Deposited</TableCell>
-                    <TableCell align="right">PSO Consumed</TableCell>
-                    <TableCell align="right">PSO Balance</TableCell>
-                    <TableCell>Deposit History</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Order</TableCell>
+                    <TableCell>Invoice / DR</TableCell>
+                    <TableCell>Reference</TableCell>
+                    <TableCell>Notes</TableCell>
+                    <TableCell align="right">Billed</TableCell>
+                    <TableCell align="right">Paid</TableCell>
+                    <TableCell align="right">Balance</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {dailyRecords.length === 0 && (
+                  {(statement?.entries ?? []).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} align="center">
-                        {loading ? "Loading daily balance sheets..." : "No daily balance-sheet records found."}
+                      <TableCell colSpan={9} align="center">
+                        {loadingStatement ? "Loading client ledger..." : "No statement entries found for this client."}
                       </TableCell>
                     </TableRow>
                   )}
-                  {dailyRecords.map((record) => (
-                    <TableRow key={record.id} hover>
-                      <TableCell>{record.date}</TableCell>
-                      <TableCell>{record.pso_dr_no || "--"}</TableCell>
-                      <TableCell align="right">{formatAmount(record.pso_deposited)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.pso_consumed)}</TableCell>
-                      <TableCell align="right">{formatAmount(record.pso_balance)}</TableCell>
-                      <TableCell>{formatDepositSummary(record)}</TableCell>
+                  {(statement?.entries ?? []).map((entry, index) => (
+                    <TableRow key={`${entry.entry_type}-${entry.order_id ?? "client"}-${entry.date}-${index}`} hover>
+                      <TableCell>{formatDate(entry.date)}</TableCell>
+                      <TableCell>{entry.entry_type === "ORDER" ? "Invoice" : "Payment"}</TableCell>
+                      <TableCell>{entry.order_ser_no || "--"}</TableCell>
+                      <TableCell>
+                        {[entry.invoice_no, entry.dr_no].filter(Boolean).join(" / ") || "--"}
+                      </TableCell>
+                      <TableCell>{entry.reference || "--"}</TableCell>
+                      <TableCell>{entry.notes || getPaymentMethodLabel(entry.payment_method)}</TableCell>
+                      <TableCell align="right">{formatAmount(entry.billed_amount)}</TableCell>
+                      <TableCell align="right">{formatAmount(entry.paid_amount)}</TableCell>
+                      <TableCell align="right">{formatAmount(entry.balance_after)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

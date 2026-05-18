@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -22,7 +23,7 @@ import {
 } from "../api/balanceSheets";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
-import type { BalanceSheet, Client, Order, PsoDeposit } from "../types";
+import type { BalanceSheet, Client, ClientPaymentMethod, Order, PsoDeposit } from "../types";
 
 type DepositForm = {
   key: string;
@@ -36,6 +37,9 @@ type BalanceSheetForm = {
   aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
+  payment_method: ClientPaymentMethod;
+  payment_reference: string;
+  payment_notes: string;
   pso_dr_no: string;
   pso_consumed: string;
   pso_deposits: DepositForm[];
@@ -46,10 +50,21 @@ const emptyForm = (date: string): BalanceSheetForm => ({
   aviation_dr_no: "",
   aviation_total_due: "",
   aviation_paid: "",
+  payment_method: "",
+  payment_reference: "",
+  payment_notes: "",
   pso_dr_no: "",
   pso_consumed: "",
   pso_deposits: [],
 });
+
+const paymentMethodOptions: Array<{ value: ClientPaymentMethod; label: string }> = [
+  { value: "", label: "Not selected" },
+  { value: "CHEQUE", label: "Cheque" },
+  { value: "ACCOUNT_TRANSFER", label: "Account Transfer" },
+  { value: "CASH", label: "Cash" },
+  { value: "OTHER", label: "Other" },
+];
 
 function getTodayValue() {
   const now = new Date();
@@ -126,6 +141,9 @@ function mapDailyRecordToForm(record: BalanceSheet, previousPsoBalance: number):
     aviation_dr_no: record.aviation_dr_no,
     aviation_total_due: record.aviation_total_due,
     aviation_paid: record.aviation_paid,
+    payment_method: record.payment_method,
+    payment_reference: record.payment_reference,
+    payment_notes: record.payment_notes,
     pso_dr_no: record.pso_dr_no,
     pso_consumed: record.pso_consumed,
     pso_deposits: deposits,
@@ -138,6 +156,9 @@ function mapOrderRecordToForm(record: BalanceSheet, order: Order, fallbackDate: 
     aviation_dr_no: record.aviation_dr_no || order.dr_no || order.financial?.dr_no || "",
     aviation_total_due: order.order_total_due || record.aviation_total_due || "",
     aviation_paid: record.aviation_paid || "",
+    payment_method: record.payment_method || "",
+    payment_reference: record.payment_reference || "",
+    payment_notes: record.payment_notes || "",
     pso_dr_no: "",
     pso_consumed: "",
     pso_deposits: [],
@@ -283,14 +304,17 @@ export default function BalanceSheetPage() {
           record
             ? mapOrderRecordToForm(record, orderPayload, nextDate)
             : {
-                date: nextDate,
-                aviation_dr_no: orderPayload.dr_no || orderPayload.financial?.dr_no || "",
-                aviation_total_due: orderPayload.order_total_due || "",
-                aviation_paid: "",
-                pso_dr_no: "",
-                pso_consumed: "",
-                pso_deposits: [],
-              },
+              date: nextDate,
+              aviation_dr_no: orderPayload.dr_no || orderPayload.financial?.dr_no || "",
+              aviation_total_due: orderPayload.order_total_due || "",
+              aviation_paid: "",
+              payment_method: "",
+              payment_reference: "",
+              payment_notes: "",
+              pso_dr_no: "",
+              pso_consumed: "",
+              pso_deposits: [],
+            },
         );
       } catch (error) {
         if (active) {
@@ -375,6 +399,9 @@ export default function BalanceSheetPage() {
         aviation_dr_no: form.aviation_dr_no,
         aviation_total_due: form.aviation_total_due,
         aviation_paid: form.aviation_paid,
+        payment_method: form.payment_method,
+        payment_reference: form.payment_reference,
+        payment_notes: form.payment_notes,
         pso_dr_no: isOrderMode ? "" : form.pso_dr_no,
         pso_consumed: isOrderMode ? "0" : form.pso_consumed,
         pso_deposits: isOrderMode
@@ -526,7 +553,43 @@ export default function BalanceSheetPage() {
               fullWidth
             />
             <TextField label="Balance" value={formatBalance(aviationBalance)} InputProps={{ readOnly: true }} fullWidth />
+            {isOrderMode && (
+              <TextField
+                label="Payment Method"
+                select
+                value={form.payment_method}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, payment_method: event.target.value as ClientPaymentMethod }))
+                }
+                fullWidth
+              >
+                {paymentMethodOptions.map((option) => (
+                  <MenuItem key={option.value || "blank"} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+            {isOrderMode && (
+              <TextField
+                label="Payment Reference"
+                value={form.payment_reference}
+                onChange={(event) => setForm((current) => ({ ...current, payment_reference: event.target.value }))}
+                placeholder="Cheque no, transfer ref, voucher no"
+                fullWidth
+              />
+            )}
           </Box>
+          {isOrderMode && (
+            <TextField
+              label="Payment Notes"
+              value={form.payment_notes}
+              onChange={(event) => setForm((current) => ({ ...current, payment_notes: event.target.value }))}
+              multiline
+              minRows={3}
+              fullWidth
+            />
+          )}
         </SectionCard>
 
         {!isOrderMode && (

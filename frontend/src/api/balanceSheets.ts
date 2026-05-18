@@ -7,6 +7,9 @@ export type BalanceSheetPayload = {
   aviation_dr_no: string;
   aviation_total_due: string;
   aviation_paid: string;
+  payment_method: string;
+  payment_reference: string;
+  payment_notes: string;
   pso_dr_no: string;
   pso_consumed: string;
   pso_deposits: {
@@ -35,6 +38,9 @@ function normalizePayload(payload: BalanceSheetPayload) {
     aviation_dr_no: payload.aviation_dr_no.trim(),
     aviation_total_due: normalizeAmount(payload.aviation_total_due),
     aviation_paid: normalizeAmount(payload.aviation_paid),
+    payment_method: payload.payment_method.trim(),
+    payment_reference: payload.payment_reference.trim(),
+    payment_notes: payload.payment_notes.trim(),
     pso_dr_no: payload.pso_dr_no.trim(),
     pso_consumed: normalizeAmount(payload.pso_consumed),
     pso_deposits: payload.pso_deposits.map((deposit) => ({

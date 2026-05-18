@@ -43,6 +43,9 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
             "aviation_total_due",
             "aviation_paid",
             "aviation_balance",
+            "payment_method",
+            "payment_reference",
+            "payment_notes",
             "pso_dr_no",
             "pso_deposited",
             "pso_consumed",
@@ -96,6 +99,9 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
         attrs["aviation_dr_no"] = (attrs.get("aviation_dr_no") or self._default_order_dr_no(order)).strip()
         attrs["pso_dr_no"] = attrs.get("pso_dr_no", "")
         attrs["pso_consumed"] = attrs.get("pso_consumed", Decimal("0.00"))
+        attrs["payment_method"] = (attrs.get("payment_method") or "").strip()
+        attrs["payment_reference"] = (attrs.get("payment_reference") or "").strip()
+        attrs["payment_notes"] = attrs.get("payment_notes", "")
         return attrs
 
     def _sync_order_dr_no(self, balance_sheet: BalanceSheet):
@@ -130,8 +136,9 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
             "order": balance_sheet.order,
             "amount": amount,
             "date": balance_sheet.date,
-            "reference": reference,
-            "notes": f"Balance-sheet payment for {balance_sheet.order.ser_no}",
+            "payment_method": (balance_sheet.payment_method or "").strip(),
+            "reference": (balance_sheet.payment_reference or reference).strip(),
+            "notes": (balance_sheet.payment_notes or f"Balance-sheet payment for {balance_sheet.order.ser_no}").strip(),
         }
 
         if payment:
@@ -167,6 +174,10 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
         if order:
             attrs["pso_dr_no"] = ""
             attrs["pso_consumed"] = Decimal("0.00")
+        else:
+            attrs["payment_method"] = ""
+            attrs["payment_reference"] = ""
+            attrs["payment_notes"] = ""
         return attrs
 
     def create(self, validated_data):
