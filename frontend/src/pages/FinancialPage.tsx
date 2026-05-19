@@ -18,10 +18,11 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { fetchCompanyProfile } from "../api/companyProfile";
 import { approveFinancial, createFinancial, unlockFinancial, updateFinancial } from "../api/financials";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
-import type { Client, Financial, Order } from "../types";
+import type { Client, CompanyProfile, Financial, Order } from "../types";
 
 type FinancialForm = {
   dr_no: string;
@@ -40,13 +41,8 @@ type InvoiceField = {
 };
 
 const FIXED_FUELING_CHARGES = "5100.00";
-const COMPANY_NAME = "Bin Shafi Associates Private Limited";
 const COMPANY_LOGO_PATH = "/binshafi-logo.png";
-const COMPANY_CONTACT = {
-  address: "Address not configured",
-  phone: "Phone not configured",
-  email: "Email not configured",
-};
+const DEFAULT_COMPANY_NAME = "Bin Shafi Associates Private Limited";
 
 const emptyForm: FinancialForm = {
   dr_no: "",
@@ -163,6 +159,7 @@ export default function FinancialPage() {
   const navigate = useNavigate();
   const [order, setOrder] = useState<Order | null>(null);
   const [invoiceClient, setInvoiceClient] = useState<Client | null>(null);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [savedFinancial, setSavedFinancial] = useState<Financial | null>(null);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -171,6 +168,12 @@ export default function FinancialPage() {
   const [form, setForm] = useState<FinancialForm>(emptyForm);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    fetchCompanyProfile()
+      .then((payload) => setCompanyProfile(payload))
+      .catch(() => setCompanyProfile(null));
+  }, []);
 
   useEffect(() => {
     if (!params.orderId) {
@@ -230,10 +233,10 @@ export default function FinancialPage() {
 
   const invoiceFields = order && activeFinancial ? buildInvoiceFields(order, activeFinancial) : [];
   const companyHeader = {
-    name: COMPANY_NAME,
-    address: COMPANY_CONTACT.address,
-    phone: COMPANY_CONTACT.phone,
-    email: COMPANY_CONTACT.email,
+    name: companyProfile?.company_name || DEFAULT_COMPANY_NAME,
+    address: companyProfile?.address || "Address not configured",
+    phone: companyProfile?.phone || "Phone not configured",
+    email: companyProfile?.email || "Email not configured",
   };
   const clientHeader = {
     name: invoiceClient?.name || order?.client_name || "Client not configured",

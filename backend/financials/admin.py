@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import Financial
+from .models import CompanyProfile, Financial
+
+
+@admin.register(CompanyProfile)
+class CompanyProfileAdmin(admin.ModelAdmin):
+    list_display = ("company_name", "phone", "email", "updated_at")
 
 
 @admin.register(Financial)

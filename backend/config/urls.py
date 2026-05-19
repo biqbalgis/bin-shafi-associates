@@ -5,7 +5,7 @@ from rest_framework.routers import DefaultRouter
 from aircrafts.views import AircraftViewSet
 from balance_sheets.views import BalanceSheetViewSet
 from clients.views import ClientPaymentViewSet, ClientViewSet
-from financials.views import FinancialViewSet
+from financials.views import CompanyProfileView, FinancialViewSet
 from orders.views import (
     AirportViewSet,
     FlightReferenceViewSet,
@@ -39,5 +39,6 @@ urlpatterns = [
     path("api/auth/login/", LoginView.as_view(), name="login"),
     path("api/auth/register/", RegisterView.as_view(), name="register"),
     path("api/auth/me/", CurrentUserView.as_view(), name="current-user"),
+    path("api/company-profile/", CompanyProfileView.as_view(), name="company-profile"),
     path("api/", include(router.urls)),
 ]

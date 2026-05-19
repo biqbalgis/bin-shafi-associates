@@ -4,6 +4,21 @@ from django.db import models
 from django.utils import timezone
 
 
+class CompanyProfile(models.Model):
+    company_name = models.CharField(max_length=255, blank=True)
+    address = models.TextField(blank=True)
+    phone = models.CharField(max_length=255, blank=True)
+    email = models.EmailField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("id",)
+
+    def __str__(self) -> str:
+        return self.company_name or "Company Profile"
+
+
 class Financial(models.Model):
     GST_RATE = Decimal("0.18")
     FIXED_FUELING_CHARGES = Decimal("5100.00")

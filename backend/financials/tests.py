@@ -8,7 +8,7 @@ from aircrafts.models import Aircraft
 from clients.models import Client
 from orders.models import Airport, FuelType, Order
 
-from .models import Financial
+from .models import CompanyProfile, Financial
 
 
 class FinancialCalculationTests(TestCase):
@@ -51,3 +51,13 @@ class FinancialCalculationTests(TestCase):
         self.assertEqual(financial.bsa_price, Decimal("1200.00"))
         self.assertEqual(financial.bsa_gst, Decimal("216.00"))
         self.assertEqual(financial.bsa_total_price, Decimal("6516.00"))
+
+
+class CompanyProfileTests(TestCase):
+    def test_company_profile_can_be_created_with_blank_defaults(self):
+        profile = CompanyProfile.objects.create()
+
+        self.assertEqual(profile.company_name, "")
+        self.assertEqual(profile.address, "")
+        self.assertEqual(profile.phone, "")
+        self.assertEqual(profile.email, "")

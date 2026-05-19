@@ -1,12 +1,14 @@
 from django_filters import rest_framework as filters
 from rest_framework import status, viewsets
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from users.permissions import IsAdminRole
 
-from .models import Financial
-from .serializers import FinancialSerializer
+from .models import CompanyProfile, Financial
+from .serializers import CompanyProfileSerializer, FinancialSerializer
 
 
 class FinancialFilter(filters.FilterSet):
@@ -52,4 +54,33 @@ class FinancialViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Invoice is already editable."}, status=status.HTTP_400_BAD_REQUEST)
         financial.unlock_for_editing()
         serializer = self.get_serializer(financial)
+        return Response(serializer.data)
+
+
+class CompanyProfileView(APIView):
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAdminRole()]
+
+    def get_object(self):
+        profile = CompanyProfile.objects.order_by("id").first()
+        if profile:
+            return profile
+        return CompanyProfile.objects.create()
+
+    def get(self, request):
+        serializer = CompanyProfileSerializer(self.get_object())
+        return Response(serializer.data)
+
+    def put(self, request):
+        serializer = CompanyProfileSerializer(self.get_object(), data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def patch(self, request):
+        serializer = CompanyProfileSerializer(self.get_object(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(serializer.data)

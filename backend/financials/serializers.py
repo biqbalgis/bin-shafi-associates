@@ -2,7 +2,22 @@ from rest_framework import serializers
 
 from orders.models import OrderStatus, OrderStatusAuditLog
 
-from .models import Financial
+from .models import CompanyProfile, Financial
+
+
+class CompanyProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyProfile
+        fields = (
+            "id",
+            "company_name",
+            "address",
+            "phone",
+            "email",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
 
 
 class FinancialSerializer(serializers.ModelSerializer):

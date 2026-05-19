@@ -21,6 +21,7 @@ import {
   createFuelType,
   createRouteOption,
 } from "../api/adminSetup";
+import { fetchCompanyProfile, updateCompanyProfile } from "../api/companyProfile";
 import {
   fetchAircrafts,
   fetchAirports,
@@ -30,7 +31,7 @@ import {
   fetchFuelTypes,
   fetchRouteOptions,
 } from "../api/dropdowns";
-import type { Aircraft, Airport, Client, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
+import type { Aircraft, Airport, Client, CompanyProfile, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
 
 function SectionCard({
   title,
@@ -67,6 +68,7 @@ export default function AdminSetupPage() {
   const [flights, setFlights] = useState<FlightOption[]>([]);
   const [routes, setRoutes] = useState<RouteOption[]>([]);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
 
   const [clientForm, setClientForm] = useState({
     name: "",
@@ -91,10 +93,16 @@ export default function AdminSetupPage() {
   const [fuelCategoryForm, setFuelCategoryForm] = useState({ name: "", description: "" });
   const [flightForm, setFlightForm] = useState({ code: "", description: "" });
   const [routeForm, setRouteForm] = useState({ name: "", description: "" });
+  const [companyForm, setCompanyForm] = useState({
+    company_name: "",
+    address: "",
+    phone: "",
+    email: "",
+  });
 
   async function reloadData() {
     try {
-      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData] =
+      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData, companyProfileData] =
         await Promise.all([
           fetchClients(),
           fetchAircrafts(),
@@ -103,6 +111,7 @@ export default function AdminSetupPage() {
           fetchFuelCategories(),
           fetchFlightOptions(),
           fetchRouteOptions(),
+          fetchCompanyProfile(),
         ]);
 
       setClients(clientsData);
@@ -112,6 +121,13 @@ export default function AdminSetupPage() {
       setFuelCategories(fuelCategoriesData);
       setFlights(flightsData);
       setRoutes(routesData);
+      setCompanyProfile(companyProfileData);
+      setCompanyForm({
+        company_name: companyProfileData.company_name || "",
+        address: companyProfileData.address || "",
+        phone: companyProfileData.phone || "",
+        email: companyProfileData.email || "",
+      });
     } catch {
       setMessage({ type: "error", text: "Failed to load setup data." });
     }
@@ -141,6 +157,60 @@ export default function AdminSetupPage() {
       </Box>
 
       {message && <Alert severity={message.type}>{message.text}</Alert>}
+
+      <SectionCard title="Company Profile" description="These details appear on the login page and generated invoices.">
+        <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>
+          <TextField
+            label="Company Name"
+            value={companyForm.company_name}
+            onChange={(e) => setCompanyForm((v) => ({ ...v, company_name: e.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Phone"
+            value={companyForm.phone}
+            onChange={(e) => setCompanyForm((v) => ({ ...v, phone: e.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Email"
+            value={companyForm.email}
+            onChange={(e) => setCompanyForm((v) => ({ ...v, email: e.target.value }))}
+            fullWidth
+          />
+          <TextField
+            label="Address"
+            value={companyForm.address}
+            onChange={(e) => setCompanyForm((v) => ({ ...v, address: e.target.value }))}
+            fullWidth
+            multiline
+            minRows={3}
+            sx={{ gridColumn: { md: "1 / -1" } }}
+          />
+        </Box>
+        <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
+          <Typography variant="body2" color="text.secondary">
+            {companyProfile ? "Saved company details are loaded above." : "Company profile will be created on first save."}
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() =>
+              void handleAction(async () => {
+                const savedProfile = await updateCompanyProfile(companyForm);
+                setCompanyProfile(savedProfile);
+                setCompanyForm({
+                  company_name: savedProfile.company_name || "",
+                  address: savedProfile.address || "",
+                  phone: savedProfile.phone || "",
+                  email: savedProfile.email || "",
+                });
+              }, "Company profile saved.")
+            }
+          >
+            Save Company Details
+          </Button>
+        </Stack>
+      </SectionCard>
 
       <SectionCard title="Clients" description="Create client companies first.">
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" } }}>

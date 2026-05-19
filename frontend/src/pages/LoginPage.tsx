@@ -10,26 +10,41 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
+import { fetchCompanyProfile } from "../api/companyProfile";
 import { useAuth } from "../context/AuthContext";
+import type { CompanyProfile } from "../types";
 
 const HERO_AIRCRAFT_IMAGE =
   "/bg.png";
 const COMPANY_LOGO_PATH = "/binshafi-logo.png";
+const DEFAULT_COMPANY_NAME = "Bin Shafi Fuel";
 
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchCompanyProfile()
+      .then((payload) => setCompanyProfile(payload))
+      .catch(() => setCompanyProfile(null));
+  }, []);
 
   if (user) {
     return <Navigate to="/" replace />;
   }
+
+  const companyName = companyProfile?.company_name || DEFAULT_COMPANY_NAME;
+  const companyAddress = companyProfile?.address || "Address not configured";
+  const companyPhone = companyProfile?.phone || "Phone not configured";
+  const companyEmail = companyProfile?.email || "Email not configured";
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,7 +86,7 @@ export default function LoginPage() {
           textShadow: "0 8px 24px rgba(11,20,33,0.45)",
         }}
       >
-        Bin Shafi Fuel
+        {companyName}
       </Typography>
 
       <Box
@@ -182,6 +197,13 @@ export default function LoginPage() {
               <Typography color="text.secondary">
                 Sign in with your assigned credentials to manage fuel requests and financial closure.
               </Typography>
+
+              <Stack spacing={0.5}>
+                <Typography variant="subtitle2">{companyName}</Typography>
+                <Typography color="text.secondary">{companyAddress}</Typography>
+                <Typography color="text.secondary">Phone: {companyPhone}</Typography>
+                <Typography color="text.secondary">Email: {companyEmail}</Typography>
+              </Stack>
 
               {error && <Alert severity="error">{error}</Alert>}
 

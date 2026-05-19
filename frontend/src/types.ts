@@ -94,6 +94,16 @@ export type SavedEmailContact = {
   updated_at: string;
 };
 
+export type CompanyProfile = {
+  id: number;
+  company_name: string;
+  address: string;
+  phone: string;
+  email: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AuditLog = {
   id: number;
   old_status: OrderStatus | "";
