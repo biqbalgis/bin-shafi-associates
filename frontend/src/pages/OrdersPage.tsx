@@ -9,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   MenuItem,
   Stack,
   Tab,
@@ -239,14 +238,14 @@ export default function OrdersPage() {
         orders={orders}
         role={user?.role ?? "CUSTOMER"}
         onOrderUpdate={handleOrderUpdate}
-        onSelectOrder={setSelectedOrder}
+        onSelectOrder={user?.role === "MANAGER" ? setSelectedOrder : undefined}
       />
 
-      {selectedOrder && (
+      {user?.role === "MANAGER" && selectedOrder && (
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              Audit Trail / {selectedOrder.ser_no}
+              Approval Email / {selectedOrder.ser_no}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               {selectedOrder.flight} ({selectedOrder.flight_status === "DOMESTIC" ? "Domestic" : "International"}) / {selectedOrder.client_name} / {selectedOrder.aircraft_registration}
@@ -254,81 +253,53 @@ export default function OrdersPage() {
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               DR No: {selectedOrder.dr_no || "--"}
             </Typography>
-
-            {user?.role === "MANAGER" && (
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" gutterBottom>
-                  Approval Email Draft
-                </Typography>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
-                  <TextField
-                    label="To"
-                    select
-                    value={selectedOrder.approval_email_to || ""}
-                    onChange={(event) =>
-                      handleOrderUpdate(selectedOrder.id, { approval_email_to: event.target.value })
-                    }
-                    fullWidth
-                  >
-                    <MenuItem value="">Select recipient</MenuItem>
-                    {savedEmailContacts.map((contact) => (
-                      <MenuItem key={contact.id} value={contact.email}>
-                        {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                  <TextField
-                    label="CC"
-                    select
-                    value={selectedOrder.approval_email_cc || ""}
-                    onChange={(event) =>
-                      handleOrderUpdate(selectedOrder.id, { approval_email_cc: event.target.value })
-                    }
-                    fullWidth
-                  >
-                    <MenuItem value="">Select CC recipient</MenuItem>
-                    {savedEmailContacts.map((contact) => (
-                      <MenuItem key={contact.id} value={contact.email}>
-                        {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
-                      </MenuItem>
-                    ))}
-                  </TextField>
-                </Stack>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                  <Button variant="outlined" onClick={() => openEmailDialog("approval_email_to")}>
-                    Add New To Email
-                  </Button>
-                  <Button variant="outlined" onClick={() => openEmailDialog("approval_email_cc")}>
-                    Add New CC Email
-                  </Button>
-                  <Button variant="contained" onClick={() => generateApprovalEmail(selectedOrder)}>
-                    Generate Email Draft
-                  </Button>
-                </Stack>
-              </Box>
-            )}
-
-            <Stack spacing={2}>
-              {selectedOrder.audit_logs.length === 0 && (
-                <Typography color="text.secondary">No status changes logged yet.</Typography>
-              )}
-              {selectedOrder.audit_logs.map((log, index) => (
-                <Box key={log.id}>
-                  <Typography fontWeight={700}>
-                    {log.old_status || "CREATED"} to {log.new_status}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {new Date(log.changed_at).toLocaleString()} by {log.changed_by_name ?? "system"}
-                  </Typography>
-                  {log.notes && (
-                    <Typography variant="body2" sx={{ mt: 0.5 }}>
-                      {log.notes}
-                    </Typography>
-                  )}
-                  {index < selectedOrder.audit_logs.length - 1 && <Divider sx={{ mt: 2 }} />}
-                </Box>
-              ))}
-            </Stack>
+            <Box sx={{ mb: 1 }}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
+                <TextField
+                  label="To"
+                  select
+                  value={selectedOrder.approval_email_to || ""}
+                  onChange={(event) =>
+                    handleOrderUpdate(selectedOrder.id, { approval_email_to: event.target.value })
+                  }
+                  fullWidth
+                >
+                  <MenuItem value="">Select recipient</MenuItem>
+                  {savedEmailContacts.map((contact) => (
+                    <MenuItem key={contact.id} value={contact.email}>
+                      {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  label="CC"
+                  select
+                  value={selectedOrder.approval_email_cc || ""}
+                  onChange={(event) =>
+                    handleOrderUpdate(selectedOrder.id, { approval_email_cc: event.target.value })
+                  }
+                  fullWidth
+                >
+                  <MenuItem value="">Select CC recipient</MenuItem>
+                  {savedEmailContacts.map((contact) => (
+                    <MenuItem key={contact.id} value={contact.email}>
+                      {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                <Button variant="outlined" onClick={() => openEmailDialog("approval_email_to")}>
+                  Add New To Email
+                </Button>
+                <Button variant="outlined" onClick={() => openEmailDialog("approval_email_cc")}>
+                  Add New CC Email
+                </Button>
+                <Button variant="contained" onClick={() => generateApprovalEmail(selectedOrder)}>
+                  Generate Email Draft
+                </Button>
+              </Stack>
+            </Box>
           </CardContent>
         </Card>
       )}

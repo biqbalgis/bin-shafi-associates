@@ -32,6 +32,8 @@ export default function DashboardPage() {
   const pendingCount = orders.filter((order) => order.status === "PENDING").length;
   const approvedCount = orders.filter((order) => order.status === "APPROVED").length;
   const completedCount = orders.filter((order) => order.status === "COMPLETED").length;
+  const pendingOrders = orders.filter((order) => order.status === "PENDING").slice(0, 5);
+  const approvedOrders = orders.filter((order) => order.status === "APPROVED").slice(0, 5);
 
   return (
     <Stack spacing={3}>
@@ -80,25 +82,56 @@ export default function DashboardPage() {
         }}
       >
         <Box>
-          <Card>
-            <CardContent>
-              <Stack direction="row" spacing={1} alignItems="center" mb={2}>
-                <ReceiptLongRoundedIcon color="primary" />
-                <Typography variant="h6">Recent Orders</Typography>
-              </Stack>
-              <List disablePadding>
-                {orders.slice(0, 5).map((order) => (
-                  <ListItem key={order.id} disableGutters divider>
-                    <ListItemText
-                      primary={`${order.ser_no} / ${order.flight}`}
-                      secondary={`${order.client_name} / ${order.aircraft_registration} / ${new Date(order.date).toLocaleDateString()}`}
-                    />
-                    <OrderStatusChip status={order.status} />
-                  </ListItem>
-                ))}
-              </List>
-            </CardContent>
-          </Card>
+          <Stack spacing={2}>
+            <Card>
+              <CardContent>
+                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                  <ReceiptLongRoundedIcon color="primary" />
+                  <Typography variant="h6">Pending Orders</Typography>
+                </Stack>
+                <List disablePadding>
+                  {pendingOrders.length === 0 && (
+                    <ListItem disableGutters>
+                      <ListItemText primary="No pending orders." />
+                    </ListItem>
+                  )}
+                  {pendingOrders.map((order) => (
+                    <ListItem key={order.id} disableGutters divider>
+                      <ListItemText
+                        primary={`${order.ser_no} / ${order.flight}`}
+                        secondary={`${order.client_name} / ${order.aircraft_registration} / ${new Date(order.date).toLocaleDateString()}`}
+                      />
+                      <OrderStatusChip status={order.status} />
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                  <ReceiptLongRoundedIcon color="primary" />
+                  <Typography variant="h6">Approved Orders</Typography>
+                </Stack>
+                <List disablePadding>
+                  {approvedOrders.length === 0 && (
+                    <ListItem disableGutters>
+                      <ListItemText primary="No approved orders." />
+                    </ListItem>
+                  )}
+                  {approvedOrders.map((order) => (
+                    <ListItem key={order.id} disableGutters divider>
+                      <ListItemText
+                        primary={`${order.ser_no} / ${order.flight}`}
+                        secondary={`${order.client_name} / ${order.aircraft_registration} / ${new Date(order.date).toLocaleDateString()}`}
+                      />
+                      <OrderStatusChip status={order.status} />
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+          </Stack>
         </Box>
         <Box>
           <Card sx={{ height: "100%" }}>

@@ -6,15 +6,17 @@ import {
   Button,
   Card,
   CardContent,
+  LinearProgress,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import { isAxiosError } from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { createClientPayment, getClientStatement } from "../api/clients";
 import {
   createBalanceSheet,
   listBalanceSheets,
@@ -23,7 +25,15 @@ import {
 } from "../api/balanceSheets";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
-import type { BalanceSheet, Client, ClientPaymentMethod, Order, PsoDeposit } from "../types";
+import type {
+  BalanceSheet,
+  Client,
+  ClientInvoiceSummary,
+  ClientPaymentMethod,
+  ClientStatement,
+  Order,
+  PsoDeposit,
+} from "../types";
 
 type DepositForm = {
   key: string;
@@ -32,36 +42,27 @@ type DepositForm = {
   cheque_number: string;
 };
 
-type BalanceSheetForm = {
+type DailyDepositForm = {
   date: string;
-  aviation_dr_no: string;
-  aviation_total_due: string;
-  aviation_paid: string;
-  payment_method: ClientPaymentMethod;
-  payment_reference: string;
-  payment_notes: string;
   pso_dr_no: string;
   pso_consumed: string;
   pso_deposits: DepositForm[];
 };
 
-const emptyForm = (date: string): BalanceSheetForm => ({
-  date,
-  aviation_dr_no: "",
-  aviation_total_due: "",
-  aviation_paid: "",
-  payment_method: "",
-  payment_reference: "",
-  payment_notes: "",
-  pso_dr_no: "",
-  pso_consumed: "",
-  pso_deposits: [],
-});
+type AviationPaymentForm = {
+  clientId: string;
+  orderId: string;
+  amount: string;
+  date: string;
+  payment_method: ClientPaymentMethod;
+  payment_reference: string;
+  payment_notes: string;
+};
 
 const paymentMethodOptions: Array<{ value: ClientPaymentMethod; label: string }> = [
-  { value: "", label: "Not selected" },
+  { value: "", label: "Select method" },
   { value: "CHEQUE", label: "Cheque" },
-  { value: "ACCOUNT_TRANSFER", label: "Account Transfer" },
+  { value: "ACCOUNT_TRANSFER", label: "Online" },
   { value: "CASH", label: "Cash" },
   { value: "OTHER", label: "Other" },
 ];
@@ -72,6 +73,10 @@ function getTodayValue() {
   return new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
 }
 
+function buildDepositKey(seed?: string | number) {
+  return `${seed ?? "deposit"}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function parseAmount(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") {
     return 0;
@@ -80,7 +85,7 @@ function parseAmount(value: string | number | null | undefined) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function formatBalance(value: string | number) {
+function formatBalance(value: string | number | null | undefined) {
   return parseAmount(value).toFixed(2);
 }
 
@@ -112,10 +117,6 @@ function extractApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-function buildDepositKey(seed?: string | number) {
-  return `${seed ?? "deposit"}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function createDepositForm(date: string, deposit?: Partial<PsoDeposit>): DepositForm {
   return {
     key: buildDepositKey(deposit?.id ?? date),
@@ -125,7 +126,28 @@ function createDepositForm(date: string, deposit?: Partial<PsoDeposit>): Deposit
   };
 }
 
-function mapDailyRecordToForm(record: BalanceSheet, previousPsoBalance: number): BalanceSheetForm {
+function createEmptyDailyDepositForm(date: string): DailyDepositForm {
+  return {
+    date,
+    pso_dr_no: "",
+    pso_consumed: "",
+    pso_deposits: [],
+  };
+}
+
+function createEmptyPaymentForm(date: string): AviationPaymentForm {
+  return {
+    clientId: "",
+    orderId: "",
+    amount: "",
+    date,
+    payment_method: "",
+    payment_reference: "",
+    payment_notes: "",
+  };
+}
+
+function mapDailyRecordToForm(record: BalanceSheet, previousPsoBalance: number): DailyDepositForm {
   const deposits =
     record.pso_deposits.length > 0
       ? record.pso_deposits.map((deposit) => createDepositForm(record.date, deposit))
@@ -138,30 +160,9 @@ function mapDailyRecordToForm(record: BalanceSheet, previousPsoBalance: number):
 
   return {
     date: record.date,
-    aviation_dr_no: record.aviation_dr_no,
-    aviation_total_due: record.aviation_total_due,
-    aviation_paid: record.aviation_paid,
-    payment_method: record.payment_method,
-    payment_reference: record.payment_reference,
-    payment_notes: record.payment_notes,
     pso_dr_no: record.pso_dr_no,
     pso_consumed: record.pso_consumed,
     pso_deposits: deposits,
-  };
-}
-
-function mapOrderRecordToForm(record: BalanceSheet, order: Order, fallbackDate: string): BalanceSheetForm {
-  return {
-    date: record.date || fallbackDate,
-    aviation_dr_no: record.aviation_dr_no || order.dr_no || order.financial?.dr_no || "",
-    aviation_total_due: order.order_total_due || record.aviation_total_due || "",
-    aviation_paid: record.aviation_paid || "",
-    payment_method: record.payment_method || "",
-    payment_reference: record.payment_reference || "",
-    payment_notes: record.payment_notes || "",
-    pso_dr_no: "",
-    pso_consumed: "",
-    pso_deposits: [],
   };
 }
 
@@ -209,19 +210,63 @@ export default function BalanceSheetPage() {
   const params = useParams();
   const orderId = params.orderId ? Number(params.orderId) : null;
   const isOrderMode = Boolean(orderId);
-  const [selectedDate, setSelectedDate] = useState(getTodayValue());
-  const [form, setForm] = useState<BalanceSheetForm>(() => emptyForm(getTodayValue()));
+  const today = getTodayValue();
+
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [dailyForm, setDailyForm] = useState<DailyDepositForm>(() => createEmptyDailyDepositForm(today));
   const [currentRecord, setCurrentRecord] = useState<BalanceSheet | null>(null);
-  const [order, setOrder] = useState<Order | null>(null);
-  const [clientSummary, setClientSummary] = useState<Client | null>(null);
   const [previousPsoBalance, setPreviousPsoBalance] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [loadingDailyRecord, setLoadingDailyRecord] = useState(false);
+  const [savingDailyRecord, setSavingDailyRecord] = useState(false);
+  const [dailyMessage, setDailyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loadingClients, setLoadingClients] = useState(true);
+  const [statement, setStatement] = useState<ClientStatement | null>(null);
+  const [loadingStatement, setLoadingStatement] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [paymentForm, setPaymentForm] = useState<AviationPaymentForm>(() => createEmptyPaymentForm(today));
+  const [order, setOrder] = useState<Order | null>(null);
+
+  async function loadClients() {
+    setLoadingClients(true);
+    try {
+      const payload = await fetchClients();
+      setClients(payload);
+      return payload;
+    } catch (error) {
+      setPaymentMessage({
+        type: "error",
+        text: extractApiErrorMessage(error, "Unable to load clients for the deposit sheet."),
+      });
+      return [];
+    } finally {
+      setLoadingClients(false);
+    }
+  }
+
+  async function loadStatement(clientId: number) {
+    setLoadingStatement(true);
+    try {
+      const payload = await getClientStatement(clientId);
+      setStatement(payload);
+      return payload;
+    } catch (error) {
+      setStatement(null);
+      setPaymentMessage({
+        type: "error",
+        text: extractApiErrorMessage(error, "Unable to load pending invoices for the selected client."),
+      });
+      return null;
+    } finally {
+      setLoadingStatement(false);
+    }
+  }
 
   useEffect(() => {
-    setMessage(null);
-  }, [orderId]);
+    void loadClients();
+  }, []);
 
   useEffect(() => {
     if (isOrderMode || !selectedDate) {
@@ -229,9 +274,10 @@ export default function BalanceSheetPage() {
     }
 
     let active = true;
+
     async function loadDailyRecord() {
-      setLoading(true);
-      setMessage(null);
+      setLoadingDailyRecord(true);
+      setDailyMessage(null);
       try {
         const records = await listBalanceSheets({ date_to: selectedDate, record_type: "daily" });
         if (!active) {
@@ -246,21 +292,20 @@ export default function BalanceSheetPage() {
 
         setPreviousPsoBalance(openingBalance);
         setCurrentRecord(exactRecord);
-        setOrder(null);
-        setClientSummary(null);
-        setForm(exactRecord ? mapDailyRecordToForm(exactRecord, openingBalance) : emptyForm(selectedDate));
+        setDailyForm(exactRecord ? mapDailyRecordToForm(exactRecord, openingBalance) : createEmptyDailyDepositForm(selectedDate));
       } catch (error) {
         if (active) {
-          setMessage({
+          setDailyMessage({
             type: "error",
-            text: extractApiErrorMessage(error, "Unable to load balance-sheet data for the selected date."),
+            text: extractApiErrorMessage(error, "Unable to load deposit-sheet data for the selected date."),
           });
           setCurrentRecord(null);
           setPreviousPsoBalance(0);
+          setDailyForm(createEmptyDailyDepositForm(selectedDate));
         }
       } finally {
         if (active) {
-          setLoading(false);
+          setLoadingDailyRecord(false);
         }
       }
     }
@@ -273,78 +318,96 @@ export default function BalanceSheetPage() {
 
   useEffect(() => {
     if (!isOrderMode || !orderId) {
+      setOrder(null);
       return;
     }
-    const currentOrderId = orderId;
 
+    const currentOrderId = orderId;
     let active = true;
-    async function loadOrderRecord() {
-      setLoading(true);
-      setMessage(null);
+    async function loadOrderContext() {
+      setPaymentMessage(null);
       try {
-        const [orderPayload, records, clients] = await Promise.all([
-          getOrder(currentOrderId),
-          listBalanceSheets({ order: currentOrderId, record_type: "order" }),
-          fetchClients(),
-        ]);
+        const orderPayload = await getOrder(currentOrderId);
         if (!active) {
           return;
         }
 
-        const record = records[0] ?? null;
-        const client = clients.find((item) => item.id === orderPayload.client) ?? null;
-        const nextDate = record?.date ?? getTodayValue();
-
         setOrder(orderPayload);
-        setClientSummary(client);
-        setCurrentRecord(record);
-        setPreviousPsoBalance(0);
-        setSelectedDate(nextDate);
-        setForm(
-          record
-            ? mapOrderRecordToForm(record, orderPayload, nextDate)
-            : {
-              date: nextDate,
-              aviation_dr_no: orderPayload.dr_no || orderPayload.financial?.dr_no || "",
-              aviation_total_due: orderPayload.order_total_due || "",
-              aviation_paid: "",
-              payment_method: "",
-              payment_reference: "",
-              payment_notes: "",
-              pso_dr_no: "",
-              pso_consumed: "",
-              pso_deposits: [],
-            },
-        );
+        setPaymentForm((current) => ({
+          ...current,
+          clientId: String(orderPayload.client),
+          orderId: String(orderPayload.id),
+        }));
       } catch (error) {
         if (active) {
-          setMessage({
+          setOrder(null);
+          setPaymentMessage({
             type: "error",
-            text: extractApiErrorMessage(error, "Unable to load order-linked balance-sheet data."),
+            text: extractApiErrorMessage(error, "Unable to load the selected order for the deposit sheet."),
           });
-          setCurrentRecord(null);
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
         }
       }
     }
 
-    void loadOrderRecord();
+    void loadOrderContext();
     return () => {
       active = false;
     };
   }, [isOrderMode, orderId]);
 
-  const depositTotal = form.pso_deposits.reduce((sum, deposit) => sum + parseAmount(deposit.amount), 0);
-  const aviationBalance = parseAmount(form.aviation_total_due) - parseAmount(form.aviation_paid);
+  useEffect(() => {
+    if (!paymentForm.clientId) {
+      setStatement(null);
+      return;
+    }
+    void loadStatement(Number(paymentForm.clientId));
+  }, [paymentForm.clientId]);
+
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === Number(paymentForm.clientId)) ?? null,
+    [clients, paymentForm.clientId],
+  );
+
+  const pendingInvoices = useMemo(
+    () =>
+      (statement?.invoices ?? []).filter((invoice) => {
+        return parseAmount(invoice.due_amount) > 0;
+      }),
+    [statement],
+  );
+
+  useEffect(() => {
+    setPaymentForm((current) => {
+      const hasCurrentInvoice = pendingInvoices.some((invoice) => String(invoice.order_id) === current.orderId);
+      if (hasCurrentInvoice) {
+        return current;
+      }
+
+      const preferredInvoice =
+        (order && pendingInvoices.find((invoice) => invoice.order_id === order.id)) ?? pendingInvoices[0] ?? null;
+      const nextOrderId = preferredInvoice ? String(preferredInvoice.order_id) : "";
+      if (nextOrderId === current.orderId) {
+        return current;
+      }
+
+      return {
+        ...current,
+        orderId: nextOrderId,
+      };
+    });
+  }, [pendingInvoices, order]);
+
+  const selectedInvoice = useMemo(
+    () => pendingInvoices.find((invoice) => String(invoice.order_id) === paymentForm.orderId) ?? null,
+    [pendingInvoices, paymentForm.orderId],
+  );
+
+  const depositTotal = dailyForm.pso_deposits.reduce((sum, deposit) => sum + parseAmount(deposit.amount), 0);
   const psoDeposited = previousPsoBalance + depositTotal;
-  const psoBalance = psoDeposited - parseAmount(form.pso_consumed);
-  const orderHasFinancialDue = Boolean(order?.order_total_due);
+  const psoBalance = psoDeposited - parseAmount(dailyForm.pso_consumed);
 
   function updateDepositRow(key: string, field: keyof Omit<DepositForm, "key">, value: string) {
-    setForm((current) => ({
+    setDailyForm((current) => ({
       ...current,
       pso_deposits: current.pso_deposits.map((deposit) =>
         deposit.key === key ? { ...deposit, [field]: value } : deposit,
@@ -353,64 +416,129 @@ export default function BalanceSheetPage() {
   }
 
   function addDepositRow() {
-    setForm((current) => ({
+    setDailyForm((current) => ({
       ...current,
       pso_deposits: [...current.pso_deposits, createDepositForm(current.date)],
     }));
   }
 
   function removeDepositRow(key: string) {
-    setForm((current) => ({
+    setDailyForm((current) => ({
       ...current,
       pso_deposits: current.pso_deposits.filter((deposit) => deposit.key !== key),
     }));
   }
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handlePaymentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaving(true);
-    setMessage(null);
+    setSavingPayment(true);
+    setPaymentMessage(null);
 
-    if (isOrderMode && order && !orderHasFinancialDue) {
-      setSaving(false);
-      setMessage({ type: "error", text: "Save financials for this order first so total due can be calculated." });
+    if (!paymentForm.clientId) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Select a client before recording payment." });
       return;
     }
 
-    const usedDeposits = form.pso_deposits.filter(
+    if (!paymentForm.orderId || !selectedInvoice) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Select a pending DR number before recording payment." });
+      return;
+    }
+
+    const amountPaid = parseAmount(paymentForm.amount);
+    const dueAmount = parseAmount(selectedInvoice.due_amount);
+
+    if (amountPaid <= 0) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Amount paid must be greater than zero." });
+      return;
+    }
+
+    if (amountPaid > dueAmount) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Amount paid cannot be greater than the selected due amount." });
+      return;
+    }
+
+    if (!paymentForm.date) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Select the paid date." });
+      return;
+    }
+
+    if (!paymentForm.payment_method) {
+      setSavingPayment(false);
+      setPaymentMessage({ type: "error", text: "Select how the payment was made." });
+      return;
+    }
+
+    try {
+      await createClientPayment({
+        client: Number(paymentForm.clientId),
+        order: Number(paymentForm.orderId),
+        amount: paymentForm.amount,
+        date: paymentForm.date,
+        payment_method: paymentForm.payment_method,
+        reference: paymentForm.payment_reference,
+        notes: paymentForm.payment_notes,
+      });
+
+      await Promise.all([loadStatement(Number(paymentForm.clientId)), loadClients()]);
+
+      setPaymentForm((current) => ({
+        ...current,
+        amount: "",
+        payment_method: "",
+        payment_reference: "",
+        payment_notes: "",
+        date: getTodayValue(),
+      }));
+      setPaymentMessage({ type: "success", text: "Client payment recorded." });
+    } catch (error) {
+      setPaymentMessage({
+        type: "error",
+        text: extractApiErrorMessage(error, "Unable to record the client payment."),
+      });
+    } finally {
+      setSavingPayment(false);
+    }
+  }
+
+  async function handleDailyRecordSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingDailyRecord(true);
+    setDailyMessage(null);
+
+    const usedDeposits = dailyForm.pso_deposits.filter(
       (deposit) => deposit.amount.trim() !== "" || deposit.date.trim() !== "" || deposit.cheque_number.trim() !== "",
     );
 
-    if (!isOrderMode) {
-      const hasInvalidDeposit = usedDeposits.some(
-        (deposit) => deposit.amount.trim() === "" || deposit.date.trim() === "" || parseAmount(deposit.amount) <= 0,
-      );
-      if (hasInvalidDeposit) {
-        setSaving(false);
-        setMessage({ type: "error", text: "Each PSO deposit needs a positive amount and a date." });
-        return;
-      }
+    const hasInvalidDeposit = usedDeposits.some(
+      (deposit) => deposit.amount.trim() === "" || deposit.date.trim() === "" || parseAmount(deposit.amount) <= 0,
+    );
+    if (hasInvalidDeposit) {
+      setSavingDailyRecord(false);
+      setDailyMessage({ type: "error", text: "Each PSO deposit needs a positive amount and a date." });
+      return;
     }
 
     try {
       const payload: BalanceSheetPayload = {
-        date: form.date,
-        order: order?.id,
-        aviation_dr_no: form.aviation_dr_no,
-        aviation_total_due: form.aviation_total_due,
-        aviation_paid: form.aviation_paid,
-        payment_method: form.payment_method,
-        payment_reference: form.payment_reference,
-        payment_notes: form.payment_notes,
-        pso_dr_no: isOrderMode ? "" : form.pso_dr_no,
-        pso_consumed: isOrderMode ? "0" : form.pso_consumed,
-        pso_deposits: isOrderMode
-          ? []
-          : usedDeposits.map((deposit) => ({
-              amount: deposit.amount,
-              date: deposit.date,
-              cheque_number: deposit.cheque_number,
-            })),
+        date: dailyForm.date,
+        aviation_dr_no: "",
+        aviation_total_due: "0",
+        aviation_paid: "0",
+        payment_method: "",
+        payment_reference: "",
+        payment_notes: "",
+        pso_dr_no: dailyForm.pso_dr_no,
+        pso_consumed: dailyForm.pso_consumed,
+        pso_deposits: usedDeposits.map((deposit) => ({
+          amount: deposit.amount,
+          date: deposit.date,
+          cheque_number: deposit.cheque_number,
+        })),
       };
 
       const savedRecord = currentRecord
@@ -418,100 +546,83 @@ export default function BalanceSheetPage() {
         : await createBalanceSheet(payload);
 
       setCurrentRecord(savedRecord);
-      if (isOrderMode && order) {
-        const clients = await fetchClients();
-        setClientSummary(clients.find((item) => item.id === order.client) ?? null);
-        setForm(mapOrderRecordToForm(savedRecord, order, savedRecord.date));
-      } else {
-        setForm(mapDailyRecordToForm(savedRecord, previousPsoBalance));
-      }
-      setMessage({
+      setDailyForm(mapDailyRecordToForm(savedRecord, previousPsoBalance));
+      setDailyMessage({
         type: "success",
-        text: currentRecord ? "Balance sheet updated." : "Balance sheet created.",
+        text: currentRecord ? "Deposit sheet updated." : "Deposit sheet created.",
       });
     } catch (error) {
-      setMessage({
+      setDailyMessage({
         type: "error",
-        text: extractApiErrorMessage(error, "Unable to save the balance sheet. Check the date and numeric values."),
+        text: extractApiErrorMessage(error, "Unable to save the deposit sheet. Check the date and numeric values."),
       });
     } finally {
-      setSaving(false);
+      setSavingDailyRecord(false);
     }
+  }
+
+  function getInvoiceLabel(invoice: ClientInvoiceSummary) {
+    const drNumber = invoice.dr_no || "No DR";
+    return `${drNumber} | ${invoice.order_ser_no} | Due ${formatBalance(invoice.due_amount)}`;
   }
 
   return (
     <Stack spacing={3}>
       <Box>
-        <Typography variant="h4">{isOrderMode ? "Order Balance Sheet" : "Balance Sheet"}</Typography>
+        <Typography variant="h4">{isOrderMode ? "Order Deposit Sheet" : "Deposit Sheet"}</Typography>
         <Typography color="text.secondary">
           {isOrderMode
-            ? "Track collection against a specific order DR number. Paid amounts update the client-level billed, paid, and due totals."
-            : "Record daily aviation and PSO balances. PSO deposits are stored as history and the running deposited amount is calculated automatically."}
+            ? "Record payment against the selected order invoice. Only pending invoices for that client can be paid here."
+            : "Use the aviation section to record client payments by pending DR number, and use the PSO section to track daily deposits."}
         </Typography>
       </Box>
 
-      {message && <Alert severity={message.type}>{message.text}</Alert>}
+      {(loadingClients || loadingStatement) && <LinearProgress />}
 
-      {isOrderMode && order && (
-        <>
-          {!orderHasFinancialDue && (
-            <Alert severity="warning">
-              This order does not have completed financials yet. Save financials first so total due can auto-fill from the order.
-            </Alert>
-          )}
-
-          <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
+      {(selectedClient || selectedInvoice || order) && (
+        <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
+          {order && (
             <SummaryCard
               label="Order"
               value={order.ser_no}
-              caption={`${order.client_name} | ${order.flight} | DR ${order.dr_no || "--"}`}
+              caption={`${order.client_name} | ${order.dr_no || "No DR"}`}
             />
-            <SummaryCard
-              label="Order Due"
-              value={formatBalance(form.aviation_total_due || 0)}
-              caption={`Paid ${formatBalance(form.aviation_paid || 0)} | Balance ${formatBalance(aviationBalance)}`}
-            />
-            <SummaryCard
-              label="Client Totals"
-              value={formatBalance(clientSummary?.total_due || 0)}
-              caption={`Billed ${formatBalance(clientSummary?.total_billed || 0)} | Paid ${formatBalance(clientSummary?.total_paid || 0)}`}
-            />
-          </Stack>
-
-          <Stack direction="row" spacing={2}>
-            <Button component={Link} to={`/financials/${order.id}`} variant="outlined">
-              Open Financials
-            </Button>
-            <Button component={Link} to="/balance-sheet/overview" variant="outlined">
-              Open Balance Overview
-            </Button>
-          </Stack>
-        </>
+          )}
+          <SummaryCard
+            label="Client Due"
+            value={formatBalance(statement?.totals.total_due)}
+            caption={selectedClient ? `${selectedClient.name} outstanding balance` : "Select a client"}
+          />
+          <SummaryCard
+            label="Pending DRs"
+            value={String(pendingInvoices.length)}
+            caption={selectedClient ? "Invoices with outstanding amount" : "No client selected"}
+          />
+          <SummaryCard
+            label="Selected Due"
+            value={formatBalance(selectedInvoice?.due_amount)}
+            caption={selectedInvoice ? `${selectedInvoice.dr_no || selectedInvoice.order_ser_no} pending` : "Choose a DR number"}
+          />
+        </Stack>
       )}
 
-      {!isOrderMode && (
-        <Card>
-          <CardContent>
-            <Stack spacing={0.75}>
-              <Typography variant="overline">Selected Date</Typography>
-              <Typography variant="h6">{form.date}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Carried PSO balance from previous record: {formatBalance(previousPsoBalance)}
-              </Typography>
-            </Stack>
-          </CardContent>
-        </Card>
-      )}
-
-      <Stack component="form" spacing={3} onSubmit={handleSubmit}>
+      <Stack component="form" spacing={3} onSubmit={handlePaymentSubmit}>
         <SectionCard
           title="Aviation"
-          description={
-            isOrderMode
-              ? "DR number is tied to the selected order, and total due follows the saved financials. Enter the amount received against this order."
-              : "Enter aviation DR number, due, and paid values. Aviation balance is calculated automatically."
-          }
+          description="Select a client, choose a pending DR number, review the amount due, and record how and when payment was made."
         >
+          {paymentMessage && <Alert severity={paymentMessage.type}>{paymentMessage.text}</Alert>}
+
+          {order && !selectedInvoice && !loadingStatement && (
+            <Alert severity="info">
+              This order does not have a pending invoice right now. Choose another pending DR for the same client or go back to the overview.
+            </Alert>
+          )}
+
+          {paymentForm.clientId && pendingInvoices.length === 0 && !loadingStatement && (
+            <Alert severity="info">No pending DR numbers found for the selected client.</Alert>
+          )}
+
           <Box
             sx={{
               display: "grid",
@@ -520,210 +631,265 @@ export default function BalanceSheetPage() {
             }}
           >
             <TextField
-              label={isOrderMode ? "Payment Date" : "Date"}
+              label="Select Client"
+              select
+              value={paymentForm.clientId}
+              onChange={(event) =>
+                setPaymentForm((current) => ({
+                  ...current,
+                  clientId: event.target.value,
+                  orderId: "",
+                  amount: "",
+                  payment_reference: "",
+                  payment_notes: "",
+                }))
+              }
+              fullWidth
+              disabled={loadingClients}
+            >
+              {clients.map((client) => (
+                <MenuItem key={client.id} value={String(client.id)}>
+                  {client.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              label="Pending DR Number"
+              select
+              value={paymentForm.orderId}
+              onChange={(event) =>
+                setPaymentForm((current) => ({
+                  ...current,
+                  orderId: event.target.value,
+                  amount: "",
+                  payment_reference: "",
+                  payment_notes: "",
+                }))
+              }
+              fullWidth
+              disabled={!paymentForm.clientId || loadingStatement || pendingInvoices.length === 0}
+            >
+              {pendingInvoices.map((invoice) => (
+                <MenuItem key={invoice.order_id} value={String(invoice.order_id)}>
+                  {getInvoiceLabel(invoice)}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField label="Amount Due" value={formatBalance(selectedInvoice?.due_amount)} InputProps={{ readOnly: true }} fullWidth />
+            <TextField
+              label="Amount Paid"
+              type="number"
+              value={paymentForm.amount}
+              onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Paid Date"
               type="date"
-              value={form.date}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setSelectedDate(nextValue);
-                setForm((current) => ({ ...current, date: nextValue }));
-              }}
+              value={paymentForm.date}
+              onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value }))}
               fullWidth
               InputLabelProps={{ shrink: true }}
             />
             <TextField
-              label="DR Number"
-              value={form.aviation_dr_no}
-              onChange={(event) => setForm((current) => ({ ...current, aviation_dr_no: event.target.value }))}
+              label="Payment Method"
+              select
+              value={paymentForm.payment_method}
+              onChange={(event) =>
+                setPaymentForm((current) => ({ ...current, payment_method: event.target.value as ClientPaymentMethod }))
+              }
               fullWidth
-            />
+            >
+              {paymentMethodOptions.map((option) => (
+                <MenuItem key={option.value || "blank"} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
             <TextField
-              label="Total Due"
-              type="number"
-              value={form.aviation_total_due}
-              onChange={(event) => setForm((current) => ({ ...current, aviation_total_due: event.target.value }))}
-              InputProps={{ readOnly: isOrderMode }}
+              label="Reference / Cheque No"
+              value={paymentForm.payment_reference}
+              onChange={(event) => setPaymentForm((current) => ({ ...current, payment_reference: event.target.value }))}
+              placeholder="Cheque no, online reference, cash memo"
               fullWidth
             />
-            <TextField
-              label="Paid"
-              type="number"
-              value={form.aviation_paid}
-              onChange={(event) => setForm((current) => ({ ...current, aviation_paid: event.target.value }))}
-              fullWidth
-            />
-            <TextField label="Balance" value={formatBalance(aviationBalance)} InputProps={{ readOnly: true }} fullWidth />
-            {isOrderMode && (
-              <TextField
-                label="Payment Method"
-                select
-                value={form.payment_method}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, payment_method: event.target.value as ClientPaymentMethod }))
-                }
-                fullWidth
-              >
-                {paymentMethodOptions.map((option) => (
-                  <MenuItem key={option.value || "blank"} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
-            {isOrderMode && (
-              <TextField
-                label="Payment Reference"
-                value={form.payment_reference}
-                onChange={(event) => setForm((current) => ({ ...current, payment_reference: event.target.value }))}
-                placeholder="Cheque no, transfer ref, voucher no"
-                fullWidth
-              />
-            )}
           </Box>
-          {isOrderMode && (
-            <TextField
-              label="Payment Notes"
-              value={form.payment_notes}
-              onChange={(event) => setForm((current) => ({ ...current, payment_notes: event.target.value }))}
-              multiline
-              minRows={3}
-              fullWidth
-            />
-          )}
-        </SectionCard>
 
-        {!isOrderMode && (
-          <SectionCard title="PSO" description="Add deposit entries with amount, date, and cheque number. The deposited and balance fields use the carried forward PSO balance automatically.">
-            <Stack spacing={2}>
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
-                }}
-              >
-                <TextField
-                  label="Date"
-                  type="date"
-                  value={form.date}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setSelectedDate(nextValue);
-                    setForm((current) => ({ ...current, date: nextValue }));
-                  }}
-                  fullWidth
-                  InputLabelProps={{ shrink: true }}
-                />
-                <TextField
-                  label="DR Number"
-                  value={form.pso_dr_no}
-                  onChange={(event) => setForm((current) => ({ ...current, pso_dr_no: event.target.value }))}
-                  fullWidth
-                />
-              </Box>
+          <TextField
+            label="Notes"
+            value={paymentForm.payment_notes}
+            onChange={(event) => setPaymentForm((current) => ({ ...current, payment_notes: event.target.value }))}
+            multiline
+            minRows={3}
+            fullWidth
+          />
 
-              <Card variant="outlined">
-                <CardContent>
-                  <Stack spacing={2}>
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      justifyContent="space-between"
-                      alignItems={{ xs: "stretch", sm: "center" }}
-                      spacing={1.5}
-                    >
-                      <Box>
-                        <Typography variant="subtitle1">Deposit History</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Add each PSO deposit separately so cheque and date history stays attached to the balance sheet.
-                        </Typography>
-                      </Box>
-                      <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={addDepositRow}>
-                        Add Deposit
-                      </Button>
-                    </Stack>
-
-                    {form.pso_deposits.length === 0 && (
-                      <Typography variant="body2" color="text.secondary">
-                        No deposits added for this date yet.
-                      </Typography>
-                    )}
-
-                    {form.pso_deposits.map((deposit) => (
-                      <Box
-                        key={deposit.key}
-                        sx={{
-                          display: "grid",
-                          gap: 2,
-                          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr auto" },
-                          alignItems: "center",
-                        }}
-                      >
-                        <TextField
-                          label="Amount"
-                          type="number"
-                          value={deposit.amount}
-                          onChange={(event) => updateDepositRow(deposit.key, "amount", event.target.value)}
-                          fullWidth
-                        />
-                        <TextField
-                          label="Date"
-                          type="date"
-                          value={deposit.date}
-                          onChange={(event) => updateDepositRow(deposit.key, "date", event.target.value)}
-                          fullWidth
-                          InputLabelProps={{ shrink: true }}
-                        />
-                        <TextField
-                          label="Cheque Number"
-                          value={deposit.cheque_number}
-                          onChange={(event) => updateDepositRow(deposit.key, "cheque_number", event.target.value)}
-                          fullWidth
-                        />
-                        <Button color="error" onClick={() => removeDepositRow(deposit.key)} sx={{ minWidth: { md: 0 } }}>
-                          <DeleteOutlineRoundedIcon />
-                        </Button>
-                      </Box>
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2,
-                  gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
-                }}
-              >
-                <TextField label="Deposits Added" value={formatBalance(depositTotal)} InputProps={{ readOnly: true }} fullWidth />
-                <TextField label="Deposited" value={formatBalance(psoDeposited)} InputProps={{ readOnly: true }} fullWidth />
-                <TextField
-                  label="Consumed"
-                  type="number"
-                  value={form.pso_consumed}
-                  onChange={(event) => setForm((current) => ({ ...current, pso_consumed: event.target.value }))}
-                  fullWidth
-                />
-                <TextField label="Balance" value={formatBalance(psoBalance)} InputProps={{ readOnly: true }} fullWidth />
-              </Box>
+          <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={2}>
+            <Stack direction="row" spacing={1.5}>
+              <Button component={Link} to="/balance-sheet/overview" variant="outlined">
+                Open Deposit Overview
+              </Button>
+              {!isOrderMode && (
+                <Button variant="outlined" onClick={() => void loadClients()} disabled={loadingClients || loadingStatement}>
+                  Refresh Clients
+                </Button>
+              )}
             </Stack>
-          </SectionCard>
-        )}
-
-        <Stack direction="row" justifyContent="flex-end">
-          <Button type="submit" variant="contained" disabled={saving || loading || (isOrderMode && !orderHasFinancialDue)}>
-            {saving
-              ? "Saving..."
-              : currentRecord
-                ? isOrderMode
-                  ? "Update Order Balance"
-                  : "Update Balance Sheet"
-                : isOrderMode
-                  ? "Save Order Balance"
-                  : "Save Balance Sheet"}
-          </Button>
-        </Stack>
+            <Button type="submit" variant="contained" disabled={savingPayment || loadingStatement || loadingClients}>
+              {savingPayment ? "Saving Payment..." : "Save Payment"}
+            </Button>
+          </Stack>
+        </SectionCard>
       </Stack>
+
+      {!isOrderMode && (
+        <>
+          <Card>
+            <CardContent>
+              <Stack spacing={0.75}>
+                <Typography variant="overline">Selected Date</Typography>
+                <Typography variant="h6">{dailyForm.date}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Carried PSO balance from previous record: {formatBalance(previousPsoBalance)}
+                </Typography>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Stack component="form" spacing={3} onSubmit={handleDailyRecordSubmit}>
+            <SectionCard title="PSO" description="Add deposit entries with amount, date, and cheque number. The deposited and balance fields use the carried forward PSO balance automatically.">
+              {dailyMessage && <Alert severity={dailyMessage.type}>{dailyMessage.text}</Alert>}
+              {loadingDailyRecord && <Alert severity="info">Refreshing deposit sheet...</Alert>}
+
+              <Stack spacing={2}>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 2,
+                    gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+                  }}
+                >
+                  <TextField
+                    label="Date"
+                    type="date"
+                    value={dailyForm.date}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setSelectedDate(nextValue);
+                      setDailyForm((current) => ({ ...current, date: nextValue }));
+                    }}
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <TextField
+                    label="DR Number"
+                    value={dailyForm.pso_dr_no}
+                    onChange={(event) => setDailyForm((current) => ({ ...current, pso_dr_no: event.target.value }))}
+                    fullWidth
+                  />
+                </Box>
+
+                <Card variant="outlined">
+                  <CardContent>
+                    <Stack spacing={2}>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        justifyContent="space-between"
+                        alignItems={{ xs: "stretch", sm: "center" }}
+                        spacing={1.5}
+                      >
+                        <Box>
+                          <Typography variant="subtitle1">Deposit History</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Add each PSO deposit separately so cheque and date history stays attached to the deposit sheet.
+                          </Typography>
+                        </Box>
+                        <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={addDepositRow}>
+                          Add Deposit
+                        </Button>
+                      </Stack>
+
+                      {dailyForm.pso_deposits.length === 0 && (
+                        <Typography variant="body2" color="text.secondary">
+                          No deposits added for this date yet.
+                        </Typography>
+                      )}
+
+                      {dailyForm.pso_deposits.map((deposit) => (
+                        <Box
+                          key={deposit.key}
+                          sx={{
+                            display: "grid",
+                            gap: 2,
+                            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr auto" },
+                            alignItems: "center",
+                          }}
+                        >
+                          <TextField
+                            label="Amount"
+                            type="number"
+                            value={deposit.amount}
+                            onChange={(event) => updateDepositRow(deposit.key, "amount", event.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="Date"
+                            type="date"
+                            value={deposit.date}
+                            onChange={(event) => updateDepositRow(deposit.key, "date", event.target.value)}
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                          />
+                          <TextField
+                            label="Cheque Number"
+                            value={deposit.cheque_number}
+                            onChange={(event) => updateDepositRow(deposit.key, "cheque_number", event.target.value)}
+                            fullWidth
+                          />
+                          <Button color="error" onClick={() => removeDepositRow(deposit.key)} sx={{ minWidth: { md: 0 } }}>
+                            <DeleteOutlineRoundedIcon />
+                          </Button>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </CardContent>
+                </Card>
+
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 2,
+                    gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
+                  }}
+                >
+                  <TextField label="Deposits Added" value={formatBalance(depositTotal)} InputProps={{ readOnly: true }} fullWidth />
+                  <TextField label="Deposited" value={formatBalance(psoDeposited)} InputProps={{ readOnly: true }} fullWidth />
+                  <TextField
+                    label="Consumed"
+                    type="number"
+                    value={dailyForm.pso_consumed}
+                    onChange={(event) => setDailyForm((current) => ({ ...current, pso_consumed: event.target.value }))}
+                    fullWidth
+                  />
+                  <TextField label="Balance" value={formatBalance(psoBalance)} InputProps={{ readOnly: true }} fullWidth />
+                </Box>
+              </Stack>
+            </SectionCard>
+
+            <Stack direction="row" justifyContent="flex-end">
+              <Button type="submit" variant="contained" disabled={savingDailyRecord || loadingDailyRecord}>
+                {savingDailyRecord
+                  ? "Saving..."
+                  : currentRecord
+                    ? "Update Deposit Sheet"
+                    : "Save Deposit Sheet"}
+              </Button>
+            </Stack>
+          </Stack>
+        </>
+      )}
     </Stack>
   );
 }

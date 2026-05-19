@@ -2,7 +2,6 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import SpaceDashboardRoundedIcon from "@mui/icons-material/SpaceDashboardRounded";
-import AddCircleRoundedIcon from "@mui/icons-material/AddCircleRounded";
 import AccountBalanceWalletRoundedIcon from "@mui/icons-material/AccountBalanceWalletRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
@@ -37,14 +36,11 @@ export default function AppShell() {
   const items = [
     { label: "Dashboard", icon: <SpaceDashboardRoundedIcon />, path: "/" },
     { label: "Orders", icon: <ReceiptLongRoundedIcon />, path: "/orders" },
-    ...(user?.role !== undefined
-      ? [{ label: "Create Order", icon: <AddCircleRoundedIcon />, path: "/orders/new" }]
-      : []),
     ...(user?.role === "ADMIN"
       ? [
           { label: "All Invoices", icon: <ReceiptLongRoundedIcon />, path: "/invoices" },
-          { label: "Balance Sheet", icon: <AccountBalanceWalletRoundedIcon />, path: "/balance-sheet" },
-          { label: "Balance Overview", icon: <InsightsRoundedIcon />, path: "/balance-sheet/overview" },
+          { label: "Deposit Sheet", icon: <AccountBalanceWalletRoundedIcon />, path: "/balance-sheet" },
+          { label: "Deposit Overview", icon: <InsightsRoundedIcon />, path: "/balance-sheet/overview" },
           { label: "User Management", icon: <GroupRoundedIcon />, path: "/admin/users" },
           { label: "Admin Setup", icon: <SettingsRoundedIcon />, path: "/admin/setup" },
         ]

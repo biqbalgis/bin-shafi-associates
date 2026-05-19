@@ -203,7 +203,7 @@ export default function BalanceSheetOverviewPage() {
     <Stack spacing={3}>
       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Box>
-          <Typography variant="h4">Client Balance Overview</Typography>
+          <Typography variant="h4">Client Deposit Overview</Typography>
           <Typography color="text.secondary">
             Select any client to review invoice totals, paid amounts, payment dates, methods, and outstanding dues.
           </Typography>
@@ -213,7 +213,7 @@ export default function BalanceSheetOverviewPage() {
             Refresh
           </Button>
           <Button component={Link} to="/balance-sheet" variant="outlined">
-            Daily Balance Sheet
+            Deposit Sheet
           </Button>
         </Stack>
       </Box>
@@ -419,7 +419,7 @@ export default function BalanceSheetOverviewPage() {
                                   <PaymentDetailTable payments={invoice.payments} />
                                   <Box>
                                     <Button component={Link} to={`/balance-sheet/${invoice.order_id}`} size="small" variant="outlined">
-                                      Open Order Balance
+                                      Open Deposit Sheet
                                     </Button>
                                   </Box>
                                 </Stack>
