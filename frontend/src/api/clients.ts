@@ -13,13 +13,28 @@ export async function createClientPayment(payload: {
   date: string;
   payment_method: ClientPaymentMethod;
   reference: string;
-  notes: string;
+  notes?: string;
 }) {
   const response = await apiClient.post("/client-payments/", {
     ...payload,
     amount: payload.amount.trim(),
     reference: payload.reference.trim(),
-    notes: payload.notes.trim(),
+    notes: (payload.notes ?? "").trim(),
+  });
+  return response.data;
+}
+
+export async function createBulkClientPayment(payload: {
+  client: number;
+  amount: string;
+  date: string;
+  payment_method: ClientPaymentMethod;
+  reference: string;
+}) {
+  const response = await apiClient.post("/client-payments/bulk/", {
+    ...payload,
+    amount: payload.amount.trim(),
+    reference: payload.reference.trim(),
   });
   return response.data;
 }

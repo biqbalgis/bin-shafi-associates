@@ -1,9 +1,16 @@
-from rest_framework import permissions, response, viewsets
+from rest_framework import permissions, response, status, viewsets
 from rest_framework.decorators import action
 
 from .balances import build_client_statement, with_balance_annotations
+from .payment_allocation import allocate_bulk_client_payment
 from .models import Client, ClientPayment
-from .serializers import ClientBalanceStatementSerializer, ClientPaymentSerializer, ClientSerializer
+from .serializers import (
+    BulkClientPaymentResponseSerializer,
+    BulkClientPaymentSerializer,
+    ClientBalanceStatementSerializer,
+    ClientPaymentSerializer,
+    ClientSerializer,
+)
 from users.models import UserRole
 from users.permissions import IsAdminRole, IsManagerOrAdminRole
 
@@ -53,6 +60,37 @@ class ClientPaymentViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_permissions(self):
-        if self.action in {"create", "update", "partial_update", "destroy"}:
+        if self.action in {"create", "update", "partial_update", "destroy", "bulk"}:
             return [permissions.IsAuthenticated(), IsManagerOrAdminRole()]
         return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=["post"], url_path="bulk")
+    def bulk(self, request):
+        serializer = BulkClientPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        created_payments = allocate_bulk_client_payment(
+            client=serializer.validated_data["client"],
+            amount=serializer.validated_data["amount"],
+            date=serializer.validated_data["date"],
+            payment_method=serializer.validated_data["payment_method"],
+            reference=serializer.validated_data["reference"].strip(),
+            created_by=request.user,
+        )
+        response_serializer = BulkClientPaymentResponseSerializer(
+            {
+                "client": serializer.validated_data["client"].id,
+                "total_due": serializer.validated_data["total_due"],
+                "amount_allocated": serializer.validated_data["amount"],
+                "allocation_count": len(created_payments),
+                "allocations": [
+                    {
+                        "payment_id": payment.id,
+                        "order": payment.order_id,
+                        "order_ser_no": payment.order.ser_no if payment.order_id else "",
+                        "amount": payment.amount,
+                    }
+                    for payment in created_payments
+                ],
+            }
+        )
+        return response.Response(response_serializer.data, status=status.HTTP_201_CREATED)

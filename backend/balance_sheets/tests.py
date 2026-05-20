@@ -11,6 +11,7 @@ from clients.models import Client
 from financials.models import Financial
 from orders.models import Airport, FuelType, Order, OrderStatus, OrderStatusAuditLog
 
+from .models import BalanceSheet
 from .serializers import BalanceSheetSerializer
 
 
@@ -30,7 +31,7 @@ class OrderLinkedBalanceSheetTests(TestCase):
         self.request = APIRequestFactory().post("/api/balance-sheets/")
         self.request.user = self.user
 
-    def _create_completed_order(self, serial_suffix: int, total_amount: Decimal) -> Order:
+    def _create_completed_order(self, serial_suffix: int, total_amount: Decimal, pso_total_amount: Decimal | None = None) -> Order:
         order = Order.objects.create(
             date=date(2026, 5, serial_suffix),
             flight=f"PK{serial_suffix}",
@@ -57,7 +58,10 @@ class OrderLinkedBalanceSheetTests(TestCase):
             pso_rate=Decimal("1.00"),
             bsa_rate=Decimal("1.00"),
         )
-        Financial.objects.filter(pk=financial.pk).update(bsa_total_price=total_amount)
+        updates = {"bsa_total_price": total_amount}
+        if pso_total_amount is not None:
+            updates["pso_total_price"] = pso_total_amount
+        Financial.objects.filter(pk=financial.pk).update(**updates)
         financial.refresh_from_db()
         return order
 
@@ -95,3 +99,37 @@ class OrderLinkedBalanceSheetTests(TestCase):
         self.assertEqual(second_order.balance_sheet.client_payment.amount, Decimal("50.00"))
         self.assertEqual(first_order.balance_sheet.client_payment.payment_method, "ACCOUNT_TRANSFER")
         self.assertEqual(second_order.balance_sheet.client_payment.reference, f"PAY-{second_order.id}")
+
+    def test_daily_pso_summary_uses_deposits_and_completed_invoice_totals(self):
+        self._create_completed_order(1, Decimal("100.00"), pso_total_amount=Decimal("120.00"))
+        self._create_completed_order(2, Decimal("100.00"), pso_total_amount=Decimal("80.00"))
+
+        serializer = BalanceSheetSerializer(
+            data={
+                "date": "2026-05-09",
+                "aviation_dr_no": "",
+                "aviation_paid": "0",
+                "pso_dr_no": "PSO-1",
+                "pso_deposits": [
+                    {
+                        "amount": "1000.00",
+                        "date": "2026-05-09",
+                        "mode": "ACCOUNT_TRANSFER",
+                        "reference": "DEP-1000",
+                    }
+                ],
+            },
+            context={"request": self.request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        record = serializer.save()
+
+        record.refresh_from_db()
+        self.assertEqual(record.pso_deposited, Decimal("1000.00"))
+        self.assertEqual(record.pso_consumed, Decimal("200.00"))
+        self.assertEqual(record.pso_balance, Decimal("800.00"))
+
+        summary = BalanceSheet.get_pso_summary(date(2026, 5, 9))
+        self.assertEqual(summary["deposited"], Decimal("1000.00"))
+        self.assertEqual(summary["consumed"], Decimal("200.00"))
+        self.assertEqual(summary["balance"], Decimal("800.00"))

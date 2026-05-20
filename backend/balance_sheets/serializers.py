@@ -17,8 +17,15 @@ class PsoDepositSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PsoDeposit
-        fields = ("id", "amount", "date", "cheque_number", "created_at", "updated_at")
+        fields = ("id", "amount", "date", "mode", "reference", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+class PsoSummarySerializer(serializers.Serializer):
+    date = serializers.DateField()
+    deposited = serializers.DecimalField(max_digits=14, decimal_places=2)
+    consumed = serializers.DecimalField(max_digits=14, decimal_places=2)
+    balance = serializers.DecimalField(max_digits=14, decimal_places=2)
 
 
 class BalanceSheetSerializer(serializers.ModelSerializer):
@@ -60,6 +67,7 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "aviation_balance",
             "pso_deposited",
+            "pso_consumed",
             "pso_balance",
             "created_by",
             "created_by_username",
@@ -98,7 +106,7 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
         attrs["aviation_total_due"] = self._default_order_total_due(order)
         attrs["aviation_dr_no"] = (attrs.get("aviation_dr_no") or self._default_order_dr_no(order)).strip()
         attrs["pso_dr_no"] = attrs.get("pso_dr_no", "")
-        attrs["pso_consumed"] = attrs.get("pso_consumed", Decimal("0.00"))
+        attrs["pso_consumed"] = Decimal("0.00")
         attrs["payment_method"] = (attrs.get("payment_method") or "").strip()
         attrs["payment_reference"] = (attrs.get("payment_reference") or "").strip()
         attrs["payment_notes"] = attrs.get("payment_notes", "")
@@ -175,6 +183,7 @@ class BalanceSheetSerializer(serializers.ModelSerializer):
             attrs["pso_dr_no"] = ""
             attrs["pso_consumed"] = Decimal("0.00")
         else:
+            attrs["pso_consumed"] = Decimal("0.00")
             attrs["payment_method"] = ""
             attrs["payment_reference"] = ""
             attrs["payment_notes"] = ""

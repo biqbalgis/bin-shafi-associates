@@ -1,5 +1,5 @@
 import { apiClient, unwrapListResponse } from "./http";
-import type { BalanceSheet, ListResponse } from "../types";
+import type { BalanceSheet, ListResponse, PsoSummary } from "../types";
 
 export type BalanceSheetPayload = {
   date: string;
@@ -15,7 +15,8 @@ export type BalanceSheetPayload = {
   pso_deposits: {
     amount: string;
     date: string;
-    cheque_number: string;
+    mode: string;
+    reference: string;
   }[];
 };
 
@@ -46,7 +47,8 @@ function normalizePayload(payload: BalanceSheetPayload) {
     pso_deposits: payload.pso_deposits.map((deposit) => ({
       amount: normalizeAmount(deposit.amount),
       date: deposit.date,
-      cheque_number: deposit.cheque_number.trim(),
+      mode: deposit.mode.trim(),
+      reference: deposit.reference.trim(),
     })),
   };
 }
@@ -71,5 +73,12 @@ export async function createBalanceSheet(payload: BalanceSheetPayload) {
 
 export async function updateBalanceSheet(id: number, payload: BalanceSheetPayload) {
   const response = await apiClient.patch<BalanceSheet>(`/balance-sheets/${id}/`, normalizePayload(payload));
+  return response.data;
+}
+
+export async function getPsoSummary(date: string) {
+  const response = await apiClient.get<PsoSummary>("/balance-sheets/pso-summary/", {
+    params: { date },
+  });
   return response.data;
 }

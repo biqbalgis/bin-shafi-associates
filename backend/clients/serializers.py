@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from .balances import quantize_money
+from .payment_allocation import get_pending_invoices_for_client, get_total_due_for_client
 from .models import Client, ClientPayment
 
 
@@ -47,6 +48,46 @@ class ClientPaymentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class BulkClientPaymentAllocationSerializer(serializers.Serializer):
+    payment_id = serializers.IntegerField()
+    order = serializers.IntegerField()
+    order_ser_no = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class BulkClientPaymentSerializer(serializers.Serializer):
+    client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.filter(is_active=True))
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+    date = serializers.DateField()
+    payment_method = serializers.CharField(allow_blank=True, max_length=30)
+    reference = serializers.CharField(allow_blank=True, max_length=100, required=False, default="")
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Payment amount must be greater than zero.")
+        return quantize_money(value)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        client = attrs["client"]
+        total_due = get_total_due_for_client(client)
+        if total_due <= Decimal("0.00"):
+            raise serializers.ValidationError({"client": "Selected client does not have any pending invoices."})
+        if attrs["amount"] > total_due:
+            raise serializers.ValidationError({"amount": "Amount paid cannot be greater than the client's total due amount."})
+        attrs["pending_invoices"] = get_pending_invoices_for_client(client)
+        attrs["total_due"] = total_due
+        return attrs
+
+
+class BulkClientPaymentResponseSerializer(serializers.Serializer):
+    client = serializers.IntegerField()
+    total_due = serializers.DecimalField(max_digits=14, decimal_places=2)
+    amount_allocated = serializers.DecimalField(max_digits=14, decimal_places=2)
+    allocation_count = serializers.IntegerField()
+    allocations = BulkClientPaymentAllocationSerializer(many=True)
 
 
 class ClientSerializer(serializers.ModelSerializer):

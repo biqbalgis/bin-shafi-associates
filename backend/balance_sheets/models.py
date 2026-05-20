@@ -1,6 +1,8 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
+from django.db.models import DecimalField, Min, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.db import models
 from django.utils import timezone
 
@@ -72,33 +74,71 @@ class BalanceSheet(models.Model):
         total = sum((deposit.amount or Decimal("0.00") for deposit in deposits), Decimal("0.00"))
         return self._quantize(total)
 
-    def apply_running_balances(self, opening_pso_balance: Decimal) -> Decimal:
-        opening_balance = self._quantize(opening_pso_balance or Decimal("0.00"))
+    @classmethod
+    def calculate_pso_deposited_total(cls, as_of_date) -> Decimal:
+        total = (
+            PsoDeposit.objects.filter(date__lte=as_of_date).aggregate(
+                total=Coalesce(
+                    Sum("amount"),
+                    Value(Decimal("0.00"), output_field=DecimalField(max_digits=14, decimal_places=2)),
+                )
+            )["total"]
+            or Decimal("0.00")
+        )
+        return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @classmethod
+    def calculate_pso_consumed_total(cls, as_of_date) -> Decimal:
+        from orders.models import Order, OrderStatus
+
+        completed_orders = (
+            Order.objects.filter(status=OrderStatus.COMPLETED, financial__isnull=False)
+            .annotate(completed_at=Min("audit_logs__changed_at", filter=Q(audit_logs__new_status=OrderStatus.COMPLETED)))
+            .filter(completed_at__date__lte=as_of_date)
+        )
+        total = completed_orders.aggregate(
+            total=Coalesce(
+                Sum("financial__pso_total_price"),
+                Value(Decimal("0.00"), output_field=DecimalField(max_digits=14, decimal_places=2)),
+            )
+        )["total"] or Decimal("0.00")
+        return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @classmethod
+    def get_pso_summary(cls, as_of_date) -> dict[str, Decimal]:
+        deposited = cls.calculate_pso_deposited_total(as_of_date)
+        consumed = cls.calculate_pso_consumed_total(as_of_date)
+        balance = (deposited - consumed).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return {
+            "date": as_of_date,
+            "deposited": deposited,
+            "consumed": consumed,
+            "balance": balance,
+        }
+
+    def apply_running_balances(self) -> Decimal:
         self.aviation_balance = self.calculate_aviation_balance()
-        if self.pso_deposited_manual:
+        if self.order_id:
             self.pso_deposited = self._quantize(self.pso_deposited or Decimal("0.00"))
+            self.pso_consumed = self._quantize(self.pso_consumed or Decimal("0.00"))
         else:
-            self.pso_deposited = self._quantize(opening_balance + self.calculate_pso_deposit_total())
+            summary = self.get_pso_summary(self.date)
+            self.pso_deposited = summary["deposited"]
+            self.pso_consumed = summary["consumed"]
         self.pso_balance = self.calculate_pso_balance()
         return self.pso_balance
 
     @classmethod
     def rebuild_chain(cls, start_date=None):
         queryset = cls.objects.filter(order__isnull=True).prefetch_related("pso_deposits").order_by("date", "created_at", "pk")
-        previous_balance = Decimal("0.00")
         if start_date is not None:
-            previous_record = (
-                cls.objects.filter(order__isnull=True, date__lt=start_date)
-                .order_by("-date", "-created_at", "-pk")
-                .first()
-            )
-            previous_balance = previous_record.pso_balance if previous_record else Decimal("0.00")
             queryset = queryset.filter(date__gte=start_date)
 
         for record in queryset:
-            record.apply_running_balances(previous_balance)
-            super(BalanceSheet, record).save(update_fields=["aviation_balance", "pso_deposited", "pso_balance", "updated_at"])
-            previous_balance = record.pso_balance
+            record.apply_running_balances()
+            super(BalanceSheet, record).save(
+                update_fields=["aviation_balance", "pso_deposited", "pso_consumed", "pso_balance", "updated_at"]
+            )
 
     def save(self, *args, **kwargs):
         self.aviation_balance = self.calculate_aviation_balance()
@@ -110,7 +150,8 @@ class PsoDeposit(models.Model):
     balance_sheet = models.ForeignKey(BalanceSheet, on_delete=models.CASCADE, related_name="pso_deposits")
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     date = models.DateField(default=timezone.localdate)
-    cheque_number = models.CharField(max_length=100, blank=True)
+    mode = models.CharField(max_length=30, blank=True)
+    reference = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1,5 +1,6 @@
 export type UserRole = "CUSTOMER" | "MANAGER" | "ADMIN";
 export type ClientPaymentMethod = "" | "CHEQUE" | "ACCOUNT_TRANSFER" | "CASH" | "OTHER";
+export type AviationPaymentWorkflow = "INVOICE_PAYMENT" | "BULK_PAYMENT";
 
 export type User = {
   id: number;
@@ -174,9 +175,17 @@ export type PsoDeposit = {
   id: number;
   amount: string;
   date: string;
-  cheque_number: string;
+  mode: ClientPaymentMethod;
+  reference: string;
   created_at: string;
   updated_at: string;
+};
+
+export type PsoSummary = {
+  date: string;
+  deposited: string;
+  consumed: string;
+  balance: string;
 };
 
 export type Order = {

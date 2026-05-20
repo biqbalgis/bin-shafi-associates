@@ -10,6 +10,7 @@ from orders.models import Airport, FuelType, Order, OrderStatus, OrderStatusAudi
 
 from .balances import build_client_statement, with_balance_annotations
 from .models import Client, ClientPayment
+from .payment_allocation import allocate_bulk_client_payment, get_total_due_for_client
 
 
 class ClientBalanceTests(TestCase):
@@ -96,3 +97,50 @@ class ClientBalanceTests(TestCase):
         self.assertEqual(statement["invoices"][0]["payment_status"], "UNPAID")
         self.assertEqual(statement["invoices"][2]["payment_status"], "PARTIALLY_PAID")
         self.assertEqual(statement["invoices"][2]["payments"][0]["payment_method"], "CHEQUE")
+
+    def test_bulk_payment_allocates_to_oldest_pending_invoices(self):
+        first_order = self._create_completed_order(1, date(2026, 5, 1), Decimal("10.00"))
+        second_order = self._create_completed_order(2, date(2026, 5, 2), Decimal("10.00"))
+        third_order = self._create_completed_order(3, date(2026, 5, 3), Decimal("10.00"))
+        fourth_order = self._create_completed_order(4, date(2026, 5, 4), Decimal("10.00"))
+        fifth_order = self._create_completed_order(5, date(2026, 5, 5), Decimal("10.00"))
+        sixth_order = self._create_completed_order(6, date(2026, 5, 6), Decimal("10.00"))
+
+        payments = allocate_bulk_client_payment(
+            client=self.client,
+            amount=Decimal("55.00"),
+            date=date(2026, 5, 10),
+            payment_method="ACCOUNT_TRANSFER",
+            reference="BULK-55",
+            created_by=self.user,
+        )
+
+        self.assertEqual(len(payments), 6)
+        self.assertEqual([payment.order_id for payment in payments[:5]], [first_order.id, second_order.id, third_order.id, fourth_order.id, fifth_order.id])
+        self.assertEqual(payments[5].order_id, sixth_order.id)
+        self.assertEqual(payments[5].amount, Decimal("5.00"))
+
+        statement = build_client_statement(self.client)
+        self.assertEqual(statement["invoices"][0]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][1]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][2]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][3]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][4]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][5]["payment_status"], "PARTIALLY_PAID")
+        self.assertEqual(statement["invoices"][5]["due_amount"], Decimal("5.00"))
+
+    def test_bulk_payment_total_due_matches_remaining_invoice_amount(self):
+        self._create_completed_order(1, date(2026, 5, 1), Decimal("10.00"))
+        second_order = self._create_completed_order(2, date(2026, 5, 2), Decimal("10.00"))
+
+        ClientPayment.objects.create(
+            client=self.client,
+            order=second_order,
+            amount=Decimal("4.00"),
+            date=date(2026, 5, 3),
+            payment_method="CHEQUE",
+            reference="PARTIAL-2",
+            created_by=self.user,
+        )
+
+        self.assertEqual(get_total_due_for_client(self.client), Decimal("16.00"))

@@ -16,9 +16,10 @@ import { isAxiosError } from "axios";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { createClientPayment, getClientStatement } from "../api/clients";
+import { createBulkClientPayment, createClientPayment, getClientStatement } from "../api/clients";
 import {
   createBalanceSheet,
+  getPsoSummary,
   listBalanceSheets,
   updateBalanceSheet,
   type BalanceSheetPayload,
@@ -26,6 +27,7 @@ import {
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
 import type {
+  AviationPaymentWorkflow,
   BalanceSheet,
   Client,
   ClientInvoiceSummary,
@@ -33,13 +35,15 @@ import type {
   ClientStatement,
   Order,
   PsoDeposit,
+  PsoSummary,
 } from "../types";
 
 type DepositForm = {
   key: string;
   amount: string;
   date: string;
-  cheque_number: string;
+  mode: ClientPaymentMethod;
+  reference: string;
 };
 
 type DailyDepositForm = {
@@ -51,12 +55,12 @@ type DailyDepositForm = {
 
 type AviationPaymentForm = {
   clientId: string;
+  workflow: AviationPaymentWorkflow;
   orderId: string;
   amount: string;
   date: string;
   payment_method: ClientPaymentMethod;
   payment_reference: string;
-  payment_notes: string;
 };
 
 const paymentMethodOptions: Array<{ value: ClientPaymentMethod; label: string }> = [
@@ -122,7 +126,8 @@ function createDepositForm(date: string, deposit?: Partial<PsoDeposit>): Deposit
     key: buildDepositKey(deposit?.id ?? date),
     amount: deposit?.amount ?? "",
     date: deposit?.date ?? date,
-    cheque_number: deposit?.cheque_number ?? "",
+    mode: deposit?.mode ?? "",
+    reference: deposit?.reference ?? "",
   };
 }
 
@@ -138,21 +143,21 @@ function createEmptyDailyDepositForm(date: string): DailyDepositForm {
 function createEmptyPaymentForm(date: string): AviationPaymentForm {
   return {
     clientId: "",
+    workflow: "INVOICE_PAYMENT",
     orderId: "",
     amount: "",
     date,
     payment_method: "",
     payment_reference: "",
-    payment_notes: "",
   };
 }
 
-function mapDailyRecordToForm(record: BalanceSheet, previousPsoBalance: number): DailyDepositForm {
+function mapDailyRecordToForm(record: BalanceSheet, previousPsoDeposited: number): DailyDepositForm {
   const deposits =
     record.pso_deposits.length > 0
       ? record.pso_deposits.map((deposit) => createDepositForm(record.date, deposit))
       : (() => {
-          const inferredAmount = Math.max(0, parseAmount(record.pso_deposited) - previousPsoBalance);
+          const inferredAmount = Math.max(0, parseAmount(record.pso_deposited) - previousPsoDeposited);
           return inferredAmount > 0
             ? [createDepositForm(record.date, { amount: inferredAmount.toFixed(2), date: record.date })]
             : [];
@@ -215,7 +220,8 @@ export default function BalanceSheetPage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [dailyForm, setDailyForm] = useState<DailyDepositForm>(() => createEmptyDailyDepositForm(today));
   const [currentRecord, setCurrentRecord] = useState<BalanceSheet | null>(null);
-  const [previousPsoBalance, setPreviousPsoBalance] = useState(0);
+  const [previousPsoDeposited, setPreviousPsoDeposited] = useState(0);
+  const [psoSummary, setPsoSummary] = useState<PsoSummary | null>(null);
   const [loadingDailyRecord, setLoadingDailyRecord] = useState(false);
   const [savingDailyRecord, setSavingDailyRecord] = useState(false);
   const [dailyMessage, setDailyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -288,11 +294,20 @@ export default function BalanceSheetPage() {
         const previousRecord = exactRecord
           ? records.find((record) => record.date < selectedDate) ?? null
           : records[0] ?? null;
-        const openingBalance = previousRecord ? parseAmount(previousRecord.pso_balance) : 0;
+        const openingDeposited = previousRecord ? parseAmount(previousRecord.pso_deposited) : 0;
+        const summary = await getPsoSummary(selectedDate);
 
-        setPreviousPsoBalance(openingBalance);
+        setPreviousPsoDeposited(openingDeposited);
+        setPsoSummary(summary);
         setCurrentRecord(exactRecord);
-        setDailyForm(exactRecord ? mapDailyRecordToForm(exactRecord, openingBalance) : createEmptyDailyDepositForm(selectedDate));
+        setDailyForm(
+          exactRecord
+            ? mapDailyRecordToForm(exactRecord, openingDeposited)
+            : {
+                ...createEmptyDailyDepositForm(selectedDate),
+                pso_consumed: summary.consumed,
+              },
+        );
       } catch (error) {
         if (active) {
           setDailyMessage({
@@ -300,7 +315,8 @@ export default function BalanceSheetPage() {
             text: extractApiErrorMessage(error, "Unable to load deposit-sheet data for the selected date."),
           });
           setCurrentRecord(null);
-          setPreviousPsoBalance(0);
+          setPreviousPsoDeposited(0);
+          setPsoSummary(null);
           setDailyForm(createEmptyDailyDepositForm(selectedDate));
         }
       } finally {
@@ -336,6 +352,7 @@ export default function BalanceSheetPage() {
         setPaymentForm((current) => ({
           ...current,
           clientId: String(orderPayload.client),
+          workflow: "INVOICE_PAYMENT",
           orderId: String(orderPayload.id),
         }));
       } catch (error) {
@@ -378,6 +395,16 @@ export default function BalanceSheetPage() {
 
   useEffect(() => {
     setPaymentForm((current) => {
+      if (current.workflow !== "INVOICE_PAYMENT") {
+        if (!current.orderId) {
+          return current;
+        }
+        return {
+          ...current,
+          orderId: "",
+        };
+      }
+
       const hasCurrentInvoice = pendingInvoices.some((invoice) => String(invoice.order_id) === current.orderId);
       if (hasCurrentInvoice) {
         return current;
@@ -395,7 +422,7 @@ export default function BalanceSheetPage() {
         orderId: nextOrderId,
       };
     });
-  }, [pendingInvoices, order]);
+  }, [pendingInvoices, order, paymentForm.workflow]);
 
   const selectedInvoice = useMemo(
     () => pendingInvoices.find((invoice) => String(invoice.order_id) === paymentForm.orderId) ?? null,
@@ -403,8 +430,10 @@ export default function BalanceSheetPage() {
   );
 
   const depositTotal = dailyForm.pso_deposits.reduce((sum, deposit) => sum + parseAmount(deposit.amount), 0);
-  const psoDeposited = previousPsoBalance + depositTotal;
-  const psoBalance = psoDeposited - parseAmount(dailyForm.pso_consumed);
+  const computedClientDue = paymentForm.workflow === "BULK_PAYMENT" ? statement?.totals.total_due : selectedInvoice?.due_amount;
+  const psoDeposited = previousPsoDeposited + depositTotal;
+  const psoConsumed = parseAmount(dailyForm.pso_consumed || psoSummary?.consumed);
+  const psoBalance = psoDeposited - psoConsumed;
 
   function updateDepositRow(key: string, field: keyof Omit<DepositForm, "key">, value: string) {
     setDailyForm((current) => ({
@@ -440,14 +469,14 @@ export default function BalanceSheetPage() {
       return;
     }
 
-    if (!paymentForm.orderId || !selectedInvoice) {
+    if (paymentForm.workflow === "INVOICE_PAYMENT" && (!paymentForm.orderId || !selectedInvoice)) {
       setSavingPayment(false);
       setPaymentMessage({ type: "error", text: "Select a pending DR number before recording payment." });
       return;
     }
 
     const amountPaid = parseAmount(paymentForm.amount);
-    const dueAmount = parseAmount(selectedInvoice.due_amount);
+    const dueAmount = parseAmount(computedClientDue);
 
     if (amountPaid <= 0) {
       setSavingPayment(false);
@@ -474,15 +503,25 @@ export default function BalanceSheetPage() {
     }
 
     try {
-      await createClientPayment({
-        client: Number(paymentForm.clientId),
-        order: Number(paymentForm.orderId),
-        amount: paymentForm.amount,
-        date: paymentForm.date,
-        payment_method: paymentForm.payment_method,
-        reference: paymentForm.payment_reference,
-        notes: paymentForm.payment_notes,
-      });
+      if (paymentForm.workflow === "BULK_PAYMENT") {
+        await createBulkClientPayment({
+          client: Number(paymentForm.clientId),
+          amount: paymentForm.amount,
+          date: paymentForm.date,
+          payment_method: paymentForm.payment_method,
+          reference: paymentForm.payment_reference,
+        });
+      } else {
+        await createClientPayment({
+          client: Number(paymentForm.clientId),
+          order: Number(paymentForm.orderId),
+          amount: paymentForm.amount,
+          date: paymentForm.date,
+          payment_method: paymentForm.payment_method,
+          reference: paymentForm.payment_reference,
+          notes: "",
+        });
+      }
 
       await Promise.all([loadStatement(Number(paymentForm.clientId)), loadClients()]);
 
@@ -491,10 +530,15 @@ export default function BalanceSheetPage() {
         amount: "",
         payment_method: "",
         payment_reference: "",
-        payment_notes: "",
         date: getTodayValue(),
       }));
-      setPaymentMessage({ type: "success", text: "Client payment recorded." });
+      setPaymentMessage({
+        type: "success",
+        text:
+          paymentForm.workflow === "BULK_PAYMENT"
+            ? "Bulk client payment recorded and applied to the oldest pending invoices."
+            : "Client payment recorded.",
+      });
     } catch (error) {
       setPaymentMessage({
         type: "error",
@@ -511,7 +555,11 @@ export default function BalanceSheetPage() {
     setDailyMessage(null);
 
     const usedDeposits = dailyForm.pso_deposits.filter(
-      (deposit) => deposit.amount.trim() !== "" || deposit.date.trim() !== "" || deposit.cheque_number.trim() !== "",
+      (deposit) =>
+        deposit.amount.trim() !== "" ||
+        deposit.date.trim() !== "" ||
+        deposit.mode.trim() !== "" ||
+        deposit.reference.trim() !== "",
     );
 
     const hasInvalidDeposit = usedDeposits.some(
@@ -533,20 +581,42 @@ export default function BalanceSheetPage() {
         payment_reference: "",
         payment_notes: "",
         pso_dr_no: dailyForm.pso_dr_no,
-        pso_consumed: dailyForm.pso_consumed,
+        pso_consumed: "0",
         pso_deposits: usedDeposits.map((deposit) => ({
           amount: deposit.amount,
           date: deposit.date,
-          cheque_number: deposit.cheque_number,
+          mode: deposit.mode,
+          reference: deposit.reference,
         })),
       };
 
-      const savedRecord = currentRecord
-        ? await updateBalanceSheet(currentRecord.id, payload)
-        : await createBalanceSheet(payload);
+      if (currentRecord) {
+        await updateBalanceSheet(currentRecord.id, payload);
+      } else {
+        await createBalanceSheet(payload);
+      }
 
-      setCurrentRecord(savedRecord);
-      setDailyForm(mapDailyRecordToForm(savedRecord, previousPsoBalance));
+      const [records, summary] = await Promise.all([
+        listBalanceSheets({ date_to: dailyForm.date, record_type: "daily" }),
+        getPsoSummary(dailyForm.date),
+      ]);
+      const exactRecord = records.find((record) => record.date === dailyForm.date) ?? null;
+      const previousRecord = exactRecord
+        ? records.find((record) => record.date < dailyForm.date) ?? null
+        : records[0] ?? null;
+      const openingDeposited = previousRecord ? parseAmount(previousRecord.pso_deposited) : 0;
+
+      setPreviousPsoDeposited(openingDeposited);
+      setPsoSummary(summary);
+      setCurrentRecord(exactRecord);
+      setDailyForm(
+        exactRecord
+          ? mapDailyRecordToForm(exactRecord, openingDeposited)
+          : {
+              ...createEmptyDailyDepositForm(dailyForm.date),
+              pso_consumed: summary.consumed,
+            },
+      );
       setDailyMessage({
         type: "success",
         text: currentRecord ? "Deposit sheet updated." : "Deposit sheet created.",
@@ -573,7 +643,7 @@ export default function BalanceSheetPage() {
         <Typography color="text.secondary">
           {isOrderMode
             ? "Record payment against the selected order invoice. Only pending invoices for that client can be paid here."
-            : "Use the aviation section to record client payments by pending DR number, and use the PSO section to track daily deposits."}
+            : "Use invoice payment for one pending DR or bulk payment to apply a client payment across the oldest pending invoices. The PSO section tracks deposits against completed-invoice consumption automatically."}
         </Typography>
       </Box>
 
@@ -599,9 +669,17 @@ export default function BalanceSheetPage() {
             caption={selectedClient ? "Invoices with outstanding amount" : "No client selected"}
           />
           <SummaryCard
-            label="Selected Due"
-            value={formatBalance(selectedInvoice?.due_amount)}
-            caption={selectedInvoice ? `${selectedInvoice.dr_no || selectedInvoice.order_ser_no} pending` : "Choose a DR number"}
+            label="Amount Due"
+            value={formatBalance(computedClientDue)}
+            caption={
+              paymentForm.workflow === "BULK_PAYMENT"
+                ? selectedClient
+                  ? `${selectedClient.name} total pending amount`
+                  : "Choose a client"
+                : selectedInvoice
+                  ? `${selectedInvoice.dr_no || selectedInvoice.order_ser_no} pending`
+                  : "Choose a DR number"
+            }
           />
         </Stack>
       )}
@@ -609,11 +687,11 @@ export default function BalanceSheetPage() {
       <Stack component="form" spacing={3} onSubmit={handlePaymentSubmit}>
         <SectionCard
           title="Aviation"
-          description="Select a client, choose a pending DR number, review the amount due, and record how and when payment was made."
+          description="Select a client, choose invoice payment or bulk payment, review the amount due, and record how and when payment was made."
         >
           {paymentMessage && <Alert severity={paymentMessage.type}>{paymentMessage.text}</Alert>}
 
-          {order && !selectedInvoice && !loadingStatement && (
+          {order && paymentForm.workflow === "INVOICE_PAYMENT" && !selectedInvoice && !loadingStatement && (
             <Alert severity="info">
               This order does not have a pending invoice right now. Choose another pending DR for the same client or go back to the overview.
             </Alert>
@@ -641,7 +719,6 @@ export default function BalanceSheetPage() {
                   orderId: "",
                   amount: "",
                   payment_reference: "",
-                  payment_notes: "",
                 }))
               }
               fullWidth
@@ -655,29 +732,50 @@ export default function BalanceSheetPage() {
             </TextField>
 
             <TextField
-              label="Pending DR Number"
+              label="Payment Workflow"
               select
-              value={paymentForm.orderId}
+              value={paymentForm.workflow}
               onChange={(event) =>
                 setPaymentForm((current) => ({
                   ...current,
-                  orderId: event.target.value,
+                  workflow: event.target.value as AviationPaymentWorkflow,
+                  orderId: "",
                   amount: "",
                   payment_reference: "",
-                  payment_notes: "",
                 }))
               }
               fullWidth
-              disabled={!paymentForm.clientId || loadingStatement || pendingInvoices.length === 0}
+              disabled={isOrderMode || !paymentForm.clientId}
             >
-              {pendingInvoices.map((invoice) => (
-                <MenuItem key={invoice.order_id} value={String(invoice.order_id)}>
-                  {getInvoiceLabel(invoice)}
-                </MenuItem>
-              ))}
+              <MenuItem value="BULK_PAYMENT">Bulk Payment</MenuItem>
+              <MenuItem value="INVOICE_PAYMENT">Invoice Payment</MenuItem>
             </TextField>
 
-            <TextField label="Amount Due" value={formatBalance(selectedInvoice?.due_amount)} InputProps={{ readOnly: true }} fullWidth />
+            {paymentForm.workflow === "INVOICE_PAYMENT" && (
+              <TextField
+                label="Pending DR Number"
+                select
+                value={paymentForm.orderId}
+                onChange={(event) =>
+                  setPaymentForm((current) => ({
+                    ...current,
+                    orderId: event.target.value,
+                    amount: "",
+                    payment_reference: "",
+                  }))
+                }
+                fullWidth
+                disabled={!paymentForm.clientId || loadingStatement || pendingInvoices.length === 0}
+              >
+                {pendingInvoices.map((invoice) => (
+                  <MenuItem key={invoice.order_id} value={String(invoice.order_id)}>
+                    {getInvoiceLabel(invoice)}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+
+            <TextField label="Amount Due" value={formatBalance(computedClientDue)} InputProps={{ readOnly: true }} fullWidth />
             <TextField
               label="Amount Paid"
               type="number"
@@ -717,15 +815,6 @@ export default function BalanceSheetPage() {
             />
           </Box>
 
-          <TextField
-            label="Notes"
-            value={paymentForm.payment_notes}
-            onChange={(event) => setPaymentForm((current) => ({ ...current, payment_notes: event.target.value }))}
-            multiline
-            minRows={3}
-            fullWidth
-          />
-
           <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={2}>
             <Stack direction="row" spacing={1.5}>
               <Button component={Link} to="/balance-sheet/overview" variant="outlined">
@@ -752,14 +841,14 @@ export default function BalanceSheetPage() {
                 <Typography variant="overline">Selected Date</Typography>
                 <Typography variant="h6">{dailyForm.date}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Carried PSO balance from previous record: {formatBalance(previousPsoBalance)}
+                  Deposited total carried before this date: {formatBalance(previousPsoDeposited)}
                 </Typography>
               </Stack>
             </CardContent>
           </Card>
 
           <Stack component="form" spacing={3} onSubmit={handleDailyRecordSubmit}>
-            <SectionCard title="PSO" description="Add deposit entries with amount, date, and cheque number. The deposited and balance fields use the carried forward PSO balance automatically.">
+            <SectionCard title="PSO" description="Add deposit entries with date, amount, mode, and reference. Consumed is calculated automatically from completed invoices using Total PSO Price.">
               {dailyMessage && <Alert severity={dailyMessage.type}>{dailyMessage.text}</Alert>}
               {loadingDailyRecord && <Alert severity="info">Refreshing deposit sheet...</Alert>}
 
@@ -803,7 +892,7 @@ export default function BalanceSheetPage() {
                         <Box>
                           <Typography variant="subtitle1">Deposit History</Typography>
                           <Typography variant="body2" color="text.secondary">
-                            Add each PSO deposit separately so cheque and date history stays attached to the deposit sheet.
+                            Add each PSO deposit separately so the payment mode and reference stay attached to the deposit sheet.
                           </Typography>
                         </Box>
                         <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={addDepositRow}>
@@ -823,7 +912,7 @@ export default function BalanceSheetPage() {
                           sx={{
                             display: "grid",
                             gap: 2,
-                            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr auto" },
+                            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr 1fr auto" },
                             alignItems: "center",
                           }}
                         >
@@ -843,9 +932,24 @@ export default function BalanceSheetPage() {
                             InputLabelProps={{ shrink: true }}
                           />
                           <TextField
-                            label="Cheque Number"
-                            value={deposit.cheque_number}
-                            onChange={(event) => updateDepositRow(deposit.key, "cheque_number", event.target.value)}
+                            label="Mode"
+                            select
+                            value={deposit.mode}
+                            onChange={(event) =>
+                              updateDepositRow(deposit.key, "mode", event.target.value as ClientPaymentMethod)
+                            }
+                            fullWidth
+                          >
+                            {paymentMethodOptions.map((option) => (
+                              <MenuItem key={option.value || "blank"} value={option.value}>
+                                {option.label}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            label="Reference"
+                            value={deposit.reference}
+                            onChange={(event) => updateDepositRow(deposit.key, "reference", event.target.value)}
                             fullWidth
                           />
                           <Button color="error" onClick={() => removeDepositRow(deposit.key)} sx={{ minWidth: { md: 0 } }}>
@@ -864,15 +968,8 @@ export default function BalanceSheetPage() {
                     gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
                   }}
                 >
-                  <TextField label="Deposits Added" value={formatBalance(depositTotal)} InputProps={{ readOnly: true }} fullWidth />
                   <TextField label="Deposited" value={formatBalance(psoDeposited)} InputProps={{ readOnly: true }} fullWidth />
-                  <TextField
-                    label="Consumed"
-                    type="number"
-                    value={dailyForm.pso_consumed}
-                    onChange={(event) => setDailyForm((current) => ({ ...current, pso_consumed: event.target.value }))}
-                    fullWidth
-                  />
+                  <TextField label="Consumed" value={formatBalance(psoConsumed)} InputProps={{ readOnly: true }} fullWidth />
                   <TextField label="Balance" value={formatBalance(psoBalance)} InputProps={{ readOnly: true }} fullWidth />
                 </Box>
               </Stack>
