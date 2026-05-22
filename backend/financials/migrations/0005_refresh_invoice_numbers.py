@@ -3,7 +3,10 @@ import re
 from django.db import migrations
 
 
-def build_client_invoice_prefix(client_name: str | None) -> str:
+def build_client_invoice_prefix(client_name: str | None, client_code: str | None = None) -> str:
+    compact_code = re.sub(r"[^A-Za-z0-9]", "", client_code or "").upper()
+    if compact_code and len(compact_code) <= 3 and not compact_code.startswith("CL"):
+        return compact_code
     words = re.findall(r"[A-Za-z0-9]+", client_name or "")
     if not words:
         return "INV"
@@ -15,7 +18,7 @@ def build_client_invoice_prefix(client_name: str | None) -> str:
 
 
 def build_invoice_number(order) -> str:
-    prefix = build_client_invoice_prefix(getattr(order.client, "name", ""))
+    prefix = build_client_invoice_prefix(getattr(order.client, "name", ""), getattr(order.client, "code", ""))
     order_ser_no = (order.ser_no or "").strip()
     serial_match = re.fullmatch(r"ORD-(\d{8})-(\d+)", order_ser_no)
     if serial_match:

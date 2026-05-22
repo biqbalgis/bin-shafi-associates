@@ -111,7 +111,11 @@ function calculateTotal(price: number | null, fuelingCharges: string, gst: numbe
   return (price ?? 0) + (numericFuelingCharges ?? 0) + (gst ?? 0);
 }
 
-function buildClientInvoicePrefix(clientName: string | undefined) {
+function buildClientInvoicePrefix(clientName: string | undefined, clientCode?: string | undefined) {
+  const compactCode = (clientCode || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (compactCode && compactCode.length <= 3 && !compactCode.startsWith("CL")) {
+    return compactCode;
+  }
   const words = (clientName || "").match(/[A-Za-z0-9]+/g) ?? [];
   if (words.length === 0) {
     return "INV";
@@ -125,8 +129,8 @@ function buildClientInvoicePrefix(clientName: string | undefined) {
     .join("") || "INV";
 }
 
-function generateBsaInvoice(orderSerNo: string | undefined, clientName: string | undefined, orderDate?: string | undefined) {
-  const prefix = buildClientInvoicePrefix(clientName);
+function generateBsaInvoice(orderSerNo: string | undefined, clientName: string | undefined, orderDate?: string | undefined, clientCode?: string | undefined) {
+  const prefix = buildClientInvoicePrefix(clientName, clientCode);
   const match = (orderSerNo || "").match(/^ORD-(\d{8})-(\d+)$/);
   if (match) {
     return `${prefix}-${match[1].slice(2)}-${String(Number(match[2]))}`;
