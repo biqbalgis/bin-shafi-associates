@@ -69,7 +69,7 @@ export async function listFinancials(filters?: FinancialFilters) {
             : undefined,
       date_from: filters?.dateFrom || undefined,
       date_to: filters?.dateTo || undefined,
-      ordering: filters?.ordering || "-order__date",
+      ordering: filters?.ordering || "-order__date,-approved_at,-updated_at,-created_at",
     },
   });
   return unwrapListResponse(response.data);

@@ -2,6 +2,32 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
 from django.utils import timezone
+import re
+
+
+def build_client_invoice_prefix(client_name: str | None) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", client_name or "")
+    if not words:
+        return "INV"
+    if len(words) == 1:
+        compact = re.sub(r"[^A-Za-z0-9]", "", words[0]).upper()
+        return compact[:3] or "INV"
+    initials = "".join(word[0].upper() for word in words[:3])
+    return initials or "INV"
+
+
+def build_bsa_invoice_number(order) -> str:
+    client_prefix = build_client_invoice_prefix(getattr(order.client, "name", ""))
+    order_ser_no = (order.ser_no or "").strip()
+    serial_match = re.fullmatch(r"ORD-(\d{8})-(\d+)", order_ser_no)
+    if serial_match:
+        order_date_fragment = serial_match.group(1)[2:]
+        sequence_number = str(int(serial_match.group(2)))
+        return f"{client_prefix}-{order_date_fragment}-{sequence_number}"
+
+    order_date = getattr(order, "date", None) or timezone.localdate()
+    sequence_fallback = str(order.pk or order.id or 1)
+    return f"{client_prefix}-{order_date:%y%m%d}-{sequence_fallback}"
 
 
 class CompanyProfile(models.Model):
@@ -93,12 +119,9 @@ class Financial(models.Model):
         return self._quantize(subtotal)
 
     def _generate_bsa_invoice(self) -> str:
-        order_ser_no = (self.order.ser_no or "").strip()
-        if order_ser_no.startswith("ORD-"):
-            return f"BSA-{order_ser_no[4:]}"
-        if order_ser_no:
-            return f"BSA-{order_ser_no}"
-        return f"BSA-{self.order_id}"
+        if not self.order_id:
+            return "INV"
+        return build_bsa_invoice_number(self.order)
 
     def is_financially_complete(self) -> bool:
         dr_no = self.order.dr_no or self.dr_no

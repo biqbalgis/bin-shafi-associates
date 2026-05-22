@@ -1,7 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
-from django.db.models import DecimalField, Min, Q, Sum, Value
+from django.db.models import DecimalField, Sum, Value
 from django.db.models.functions import Coalesce
 from django.db import models
 from django.utils import timezone
@@ -91,10 +91,10 @@ class BalanceSheet(models.Model):
     def calculate_pso_consumed_total(cls, as_of_date) -> Decimal:
         from orders.models import Order, OrderStatus
 
-        completed_orders = (
-            Order.objects.filter(status=OrderStatus.COMPLETED, financial__isnull=False)
-            .annotate(completed_at=Min("audit_logs__changed_at", filter=Q(audit_logs__new_status=OrderStatus.COMPLETED)))
-            .filter(completed_at__date__lte=as_of_date)
+        completed_orders = Order.objects.filter(
+            status=OrderStatus.COMPLETED,
+            financial__isnull=False,
+            date__lte=as_of_date,
         )
         total = completed_orders.aggregate(
             total=Coalesce(

@@ -48,13 +48,24 @@ def get_client_totals(client: Client) -> dict[str, Decimal | int]:
         return {
             "total_orders": 0,
             "completed_orders": 0,
+            "previously_billed": quantize_money(ZERO),
+            "current_billed": quantize_money(ZERO),
             "total_billed": quantize_money(ZERO),
             "total_paid": quantize_money(ZERO),
             "total_due": quantize_money(ZERO),
         }
+    completed_invoices = list(
+        Financial.objects.filter(order__client=client, order__status=OrderStatus.COMPLETED)
+        .select_related("order")
+        .order_by("order__date", "order__created_at", "order_id")
+    )
+    current_billed = quantize_money(completed_invoices[-1].bsa_total_price) if completed_invoices else quantize_money(ZERO)
+    previously_billed = quantize_money(annotated_client.total_billed - current_billed)
     return {
         "total_orders": annotated_client.total_orders,
         "completed_orders": annotated_client.completed_orders,
+        "previously_billed": previously_billed,
+        "current_billed": current_billed,
         "total_billed": quantize_money(annotated_client.total_billed),
         "total_paid": quantize_money(annotated_client.total_paid),
         "total_due": quantize_money(annotated_client.total_due),

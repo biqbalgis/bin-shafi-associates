@@ -156,7 +156,7 @@ export default function BalanceSheetOverviewPage() {
         return payload[0] ? String(payload[0].id) : "";
       });
     } catch {
-      setError("Unable to load clients for the balance overview.");
+      setError("Unable to load clients for the financial overview.");
     } finally {
       setLoadingClients(false);
     }
@@ -203,7 +203,7 @@ export default function BalanceSheetOverviewPage() {
     <Stack spacing={3}>
       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
         <Box>
-          <Typography variant="h4">Client Deposit Overview</Typography>
+          <Typography variant="h4">Financial Overview</Typography>
           <Typography color="text.secondary">
             Select any client to review invoice totals, paid amounts, payment dates, methods, and outstanding dues.
           </Typography>
@@ -227,7 +227,7 @@ export default function BalanceSheetOverviewPage() {
             <Box>
               <Typography variant="h6">All Clients Snapshot</Typography>
               <Typography color="text.secondary">
-                Compare billed, paid, and due totals across clients, then open one client’s detailed statement below.
+                Compare billed, paid, and due totals across clients, then open one client's detailed statement below.
               </Typography>
             </Box>
 
@@ -326,9 +326,19 @@ export default function BalanceSheetOverviewPage() {
                 caption={`${partiallyPaidInvoices} partial | ${unpaidInvoices} unpaid`}
               />
               <SummaryCard
+                label="Previously Billed"
+                value={formatAmount(statement?.totals.previously_billed)}
+                caption="Amount billed before the latest completed invoice"
+              />
+              <SummaryCard
+                label="Current Billed"
+                value={formatAmount(statement?.totals.current_billed)}
+                caption="Latest completed invoice amount"
+              />
+              <SummaryCard
                 label="Total Billed"
                 value={formatAmount(statement?.totals.total_billed)}
-                caption={`${statement?.totals.completed_orders ?? 0} completed orders billed`}
+                caption={`${statement?.totals.completed_orders ?? 0} completed invoices combined`}
               />
               <SummaryCard
                 label="Total Paid"
@@ -430,61 +440,6 @@ export default function BalanceSheetOverviewPage() {
                       </Fragment>
                     );
                   })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="h6">Client Ledger</Typography>
-              <Typography color="text.secondary">
-                Running ledger of completed invoices and recorded payments for the selected client.
-              </Typography>
-            </Box>
-
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Order</TableCell>
-                    <TableCell>Invoice / DR</TableCell>
-                    <TableCell>Reference</TableCell>
-                    <TableCell>Notes</TableCell>
-                    <TableCell align="right">Billed</TableCell>
-                    <TableCell align="right">Paid</TableCell>
-                    <TableCell align="right">Balance</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(statement?.entries ?? []).length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={9} align="center">
-                        {loadingStatement ? "Loading client ledger..." : "No statement entries found for this client."}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {(statement?.entries ?? []).map((entry, index) => (
-                    <TableRow key={`${entry.entry_type}-${entry.order_id ?? "client"}-${entry.date}-${index}`} hover>
-                      <TableCell>{formatDate(entry.date)}</TableCell>
-                      <TableCell>{entry.entry_type === "ORDER" ? "Invoice" : "Payment"}</TableCell>
-                      <TableCell>{entry.order_ser_no || "--"}</TableCell>
-                      <TableCell>
-                        {[entry.invoice_no, entry.dr_no].filter(Boolean).join(" / ") || "--"}
-                      </TableCell>
-                      <TableCell>{entry.reference || "--"}</TableCell>
-                      <TableCell>{entry.notes || getPaymentMethodLabel(entry.payment_method)}</TableCell>
-                      <TableCell align="right">{formatAmount(entry.billed_amount)}</TableCell>
-                      <TableCell align="right">{formatAmount(entry.paid_amount)}</TableCell>
-                      <TableCell align="right">{formatAmount(entry.balance_after)}</TableCell>
-                    </TableRow>
-                  ))}
                 </TableBody>
               </Table>
             </TableContainer>

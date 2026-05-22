@@ -47,6 +47,14 @@ export async function createOrder(payload: OrderPayload) {
   return response.data;
 }
 
+export async function sendOrderEmail(
+  orderId: number,
+  payload: { to_email: string; subject: string; body: string },
+) {
+  const response = await apiClient.post<{ detail: string }>(`/orders/${orderId}/send-order-email/`, payload);
+  return response.data;
+}
+
 export async function updateOrder(orderId: number, payload: OrderUpdatePayload) {
   const response = await apiClient.patch<Order>(`/orders/${orderId}/`, payload);
   return response.data;

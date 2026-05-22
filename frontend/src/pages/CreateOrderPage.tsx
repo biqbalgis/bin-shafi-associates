@@ -32,9 +32,9 @@ import {
   fetchFuelTypes,
   fetchRouteOptions,
 } from "../api/dropdowns";
-import { createOrder } from "../api/orders";
+import { createOrder, sendOrderEmail } from "../api/orders";
 import { useAuth } from "../context/AuthContext";
-import type { Aircraft, Airport, Client, FlightOption, FuelType, RouteOption } from "../types";
+import type { Aircraft, Airport, Client, FlightOption, FuelType, Order, RouteOption } from "../types";
 
 type FormState = {
   date: string;
@@ -98,6 +98,26 @@ const emptyRouteForm = {
   description: "",
 };
 
+function buildOrderEmailSubject(order: Order) {
+  return `Order PDF: ${order.ser_no}`;
+}
+
+function buildOrderEmailBody(order: Order) {
+  return [
+    "Please find the attached order PDF.",
+    "",
+    `Serial No: ${order.ser_no}`,
+    `Date: ${new Date(order.date).toLocaleDateString()}`,
+    `Flight: ${order.flight}`,
+    `Client: ${order.client_name}`,
+    `Aircraft: ${order.aircraft_registration}`,
+    `Airport: ${order.airport_name}`,
+    `Route: ${order.route}`,
+    `Fuel Type: ${order.fuel_type_name}`,
+    `Quantity (Ltrs): ${Number(order.quantity_ltrs).toLocaleString()}`,
+  ].join("\n");
+}
+
 export default function CreateOrderPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -114,6 +134,14 @@ export default function CreateOrderPage() {
   const [routes, setRoutes] = useState<RouteOption[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailPreview, setEmailPreview] = useState({
+    to_email: "",
+    subject: "",
+    body: "",
+  });
   const [dialogKind, setDialogKind] = useState<DialogKind>(null);
   const [clientForm, setClientForm] = useState(emptyClientForm);
   const [aircraftForm, setAircraftForm] = useState(emptyAircraftForm);
@@ -163,6 +191,16 @@ export default function CreateOrderPage() {
     setDialogKind(null);
   }
 
+  function openSendEmailDialog(order: Order) {
+    const defaultRecipient = clients.find((client) => client.id === order.client)?.contact_email || "";
+    setEmailPreview({
+      to_email: defaultRecipient,
+      subject: buildOrderEmailSubject(order),
+      body: buildOrderEmailBody(order),
+    });
+    setEmailDialogOpen(true);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -174,7 +212,7 @@ export default function CreateOrderPage() {
     }
 
     try {
-      await createOrder({
+      const createdOrderPayload = await createOrder({
         date: form.date,
         flight: form.flight,
         flight_status: form.flight_status,
@@ -185,10 +223,27 @@ export default function CreateOrderPage() {
         fuel_type: Number(form.fuel_type),
         quantity_ltrs: form.quantity_ltrs,
       });
-      setSuccess("Order created successfully.");
-      setTimeout(() => navigate("/orders"), 700);
+      setCreatedOrder(createdOrderPayload);
+      setSuccess("Order created successfully. You can send it as a PDF by email now.");
     } catch {
       setError("Order creation failed. Check your data and permissions.");
+    }
+  }
+
+  async function handleSendEmail() {
+    if (!createdOrder) {
+      return;
+    }
+    setSendingEmail(true);
+    setError("");
+    try {
+      await sendOrderEmail(createdOrder.id, emailPreview);
+      setSuccess(`Order email sent to ${emailPreview.to_email}.`);
+      setEmailDialogOpen(false);
+    } catch {
+      setError("Unable to send the order email.");
+    } finally {
+      setSendingEmail(false);
     }
   }
 
@@ -287,6 +342,16 @@ export default function CreateOrderPage() {
 
       {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
+      {createdOrder && (
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+          <Button variant="outlined" onClick={() => openSendEmailDialog(createdOrder)}>
+            Send Email
+          </Button>
+          <Button variant="outlined" onClick={() => navigate("/orders")}>
+            Back to Orders
+          </Button>
+        </Stack>
+      )}
       {user?.role === "CUSTOMER" && !user.client && (
         <Alert severity="info">
           Select a client first to load its aircrafts and create the order.
@@ -565,6 +630,44 @@ export default function CreateOrderPage() {
           <Button onClick={closeDialog}>Cancel</Button>
           <Button onClick={handleCreateRoute} variant="contained" disabled={!routeForm.name.trim()}>
             Save Route
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Send Order Email</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Email"
+              type="email"
+              value={emailPreview.to_email}
+              onChange={(event) => setEmailPreview((current) => ({ ...current, to_email: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Subject"
+              value={emailPreview.subject}
+              onChange={(event) => setEmailPreview((current) => ({ ...current, subject: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Email Preview"
+              value={emailPreview.body}
+              onChange={(event) => setEmailPreview((current) => ({ ...current, body: event.target.value }))}
+              fullWidth
+              multiline
+              minRows={10}
+            />
+            <Alert severity="info">
+              PDF attachment: {createdOrder?.ser_no || "Order"}.pdf
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEmailDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleSendEmail} variant="contained" disabled={sendingEmail || !emailPreview.to_email.trim()}>
+            {sendingEmail ? "Sending..." : "Send Email"}
           </Button>
         </DialogActions>
       </Dialog>

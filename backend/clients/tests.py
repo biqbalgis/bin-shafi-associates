@@ -86,6 +86,8 @@ class ClientBalanceTests(TestCase):
 
         self.assertEqual(statement["totals"]["total_orders"], 3)
         self.assertEqual(statement["totals"]["completed_orders"], 3)
+        self.assertEqual(statement["totals"]["previously_billed"], Decimal("2000.00"))
+        self.assertEqual(statement["totals"]["current_billed"], Decimal("1000.00"))
         self.assertEqual(statement["totals"]["total_billed"], Decimal("3000.00"))
         self.assertEqual(statement["totals"]["total_paid"], Decimal("1500.00"))
         self.assertEqual(statement["totals"]["total_due"], Decimal("1500.00"))

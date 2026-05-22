@@ -1,15 +1,19 @@
 from django_filters import rest_framework as filters
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from users.models import UserRole
 from users.permissions import IsAdminRole, IsManagerOrAdminRole
 
 from .models import Airport, FlightReference, FuelCategory, FuelType, Order, OrderStatus, RouteReference, SavedEmailContact
+from .notifications import build_order_email_body, build_order_email_subject, send_order_pdf_email
 from .serializers import (
     AirportSerializer,
     FlightReferenceSerializer,
     FuelCategorySerializer,
     FuelTypeSerializer,
+    OrderEmailSerializer,
     OrderSerializer,
     RouteReferenceSerializer,
     SavedEmailContactSerializer,
@@ -24,9 +28,9 @@ class OrderPermission(permissions.BasePermission):
         if role == UserRole.ADMIN:
             return True
         if role == UserRole.MANAGER:
-            return view.action in {"list", "retrieve", "create", "update", "partial_update"}
+            return view.action in {"list", "retrieve", "create", "update", "partial_update", "send_order_email"}
         if role == UserRole.CUSTOMER:
-            return view.action in {"list", "retrieve", "create"}
+            return view.action in {"list", "retrieve", "create", "send_order_email"}
         return False
 
 
@@ -80,6 +84,25 @@ class OrderViewSet(viewsets.ModelViewSet):
             elif scope == "active":
                 queryset = queryset.filter(status__in=[OrderStatus.PENDING, OrderStatus.APPROVED])
         return queryset
+
+    @action(detail=True, methods=["post"], url_path="send-order-email")
+    def send_order_email(self, request, pk=None):
+        order = self.get_object()
+        serializer = OrderEmailSerializer(
+            data={
+                "to_email": request.data.get("to_email"),
+                "subject": request.data.get("subject") or build_order_email_subject(order),
+                "body": request.data.get("body") or build_order_email_body(order),
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        send_order_pdf_email(
+            order=order,
+            to_email=serializer.validated_data["to_email"],
+            subject=serializer.validated_data["subject"],
+            body=serializer.validated_data["body"],
+        )
+        return Response({"detail": "Order email sent successfully."}, status=status.HTTP_200_OK)
 
 
 class BaseReferenceViewSet(viewsets.ModelViewSet):

@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { type ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   createAircraft,
@@ -31,7 +32,8 @@ import {
   fetchFuelTypes,
   fetchRouteOptions,
 } from "../api/dropdowns";
-import type { Aircraft, Airport, Client, CompanyProfile, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
+import { listFinancials, unlockFinancial } from "../api/financials";
+import type { Aircraft, Airport, Client, CompanyProfile, Financial, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
 
 function SectionCard({
   title,
@@ -60,6 +62,7 @@ function SectionCard({
 }
 
 export default function AdminSetupPage() {
+  const navigate = useNavigate();
   const [clients, setClients] = useState<Client[]>([]);
   const [aircrafts, setAircrafts] = useState<Aircraft[]>([]);
   const [airports, setAirports] = useState<Airport[]>([]);
@@ -69,6 +72,9 @@ export default function AdminSetupPage() {
   const [routes, setRoutes] = useState<RouteOption[]>([]);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile | null>(null);
+  const [approvedInvoices, setApprovedInvoices] = useState<Financial[]>([]);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
+  const [unlockingInvoice, setUnlockingInvoice] = useState(false);
 
   const [clientForm, setClientForm] = useState({
     name: "",
@@ -102,7 +108,7 @@ export default function AdminSetupPage() {
 
   async function reloadData() {
     try {
-      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData, companyProfileData] =
+      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData, companyProfileData, approvedInvoicesData] =
         await Promise.all([
           fetchClients(),
           fetchAircrafts(),
@@ -112,6 +118,7 @@ export default function AdminSetupPage() {
           fetchFlightOptions(),
           fetchRouteOptions(),
           fetchCompanyProfile(),
+          listFinancials({ approvalStatus: "approved" }),
         ]);
 
       setClients(clientsData);
@@ -122,6 +129,13 @@ export default function AdminSetupPage() {
       setFlights(flightsData);
       setRoutes(routesData);
       setCompanyProfile(companyProfileData);
+      setApprovedInvoices(approvedInvoicesData);
+      setSelectedInvoiceId((current) => {
+        if (current && approvedInvoicesData.some((invoice) => String(invoice.id) === current)) {
+          return current;
+        }
+        return approvedInvoicesData[0] ? String(approvedInvoicesData[0].id) : "";
+      });
       setCompanyForm({
         company_name: companyProfileData.company_name || "",
         address: companyProfileData.address || "",
@@ -132,6 +146,8 @@ export default function AdminSetupPage() {
       setMessage({ type: "error", text: "Failed to load setup data." });
     }
   }
+
+  const selectedInvoice = approvedInvoices.find((invoice) => String(invoice.id) === selectedInvoiceId) ?? null;
 
   useEffect(() => {
     void reloadData();
@@ -209,6 +225,53 @@ export default function AdminSetupPage() {
           >
             Save Company Details
           </Button>
+        </Stack>
+      </SectionCard>
+
+      <SectionCard title="Invoice Controls" description="Unlock an approved invoice here before editing it.">
+        <Stack spacing={2}>
+          <TextField
+            label="Approved Invoice"
+            select
+            value={selectedInvoiceId}
+            onChange={(e) => setSelectedInvoiceId(e.target.value)}
+            fullWidth
+          >
+            {approvedInvoices.length === 0 && <MenuItem value="">No approved invoices</MenuItem>}
+            {approvedInvoices.map((invoice) => (
+              <MenuItem key={invoice.id} value={invoice.id}>
+                {invoice.bsa_invoice} / {invoice.client_name} / {invoice.order_ser_no}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="body2" color="text.secondary">
+            {selectedInvoice
+              ? `${selectedInvoice.client_name} | ${selectedInvoice.order_ser_no} | Approved ${new Date(selectedInvoice.approved_at || selectedInvoice.updated_at).toLocaleString()}`
+              : "Select an approved invoice to unlock it for editing."}
+          </Typography>
+          <Stack direction="row" justifyContent="flex-end">
+            <Button
+              variant="contained"
+              disabled={!selectedInvoice || unlockingInvoice}
+              onClick={() =>
+                void handleAction(async () => {
+                  if (!selectedInvoice) {
+                    return;
+                  }
+                  setUnlockingInvoice(true);
+                  try {
+                    await unlockFinancial(selectedInvoice.id);
+                    await reloadData();
+                    navigate(`/financials/${selectedInvoice.order}`);
+                  } finally {
+                    setUnlockingInvoice(false);
+                  }
+                }, "Invoice unlocked. Redirecting to the invoice editor.")
+              }
+            >
+              {unlockingInvoice ? "Unlocking..." : "Edit Invoice"}
+            </Button>
+          </Stack>
         </Stack>
       </SectionCard>
 

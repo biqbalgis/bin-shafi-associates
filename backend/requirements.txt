@@ -4,3 +4,4 @@ djangorestframework-simplejwt>=5.3,<5.4
 django-cors-headers>=4.4,<4.5
 django-filter>=24.3,<24.4
 psycopg[binary]>=3.2,<3.3
+reportlab>=4.2,<4.3

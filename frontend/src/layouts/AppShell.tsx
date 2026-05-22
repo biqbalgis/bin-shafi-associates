@@ -40,7 +40,7 @@ export default function AppShell() {
       ? [
           { label: "All Invoices", icon: <ReceiptLongRoundedIcon />, path: "/invoices" },
           { label: "Deposit Sheet", icon: <AccountBalanceWalletRoundedIcon />, path: "/balance-sheet" },
-          { label: "Deposit Overview", icon: <InsightsRoundedIcon />, path: "/balance-sheet/overview" },
+          { label: "Financial Overview", icon: <InsightsRoundedIcon />, path: "/balance-sheet/overview" },
           { label: "User Management", icon: <GroupRoundedIcon />, path: "/admin/users" },
           { label: "Admin Setup", icon: <SettingsRoundedIcon />, path: "/admin/setup" },
         ]

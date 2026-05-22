@@ -818,7 +818,7 @@ export default function BalanceSheetPage() {
           <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={2}>
             <Stack direction="row" spacing={1.5}>
               <Button component={Link} to="/balance-sheet/overview" variant="outlined">
-                Open Deposit Overview
+                Open Financial Overview
               </Button>
               {!isOrderMode && (
                 <Button variant="outlined" onClick={() => void loadClients()} disabled={loadingClients || loadingStatement}>

@@ -199,6 +199,8 @@ class ClientInvoiceSummarySerializer(serializers.Serializer):
 class ClientBalanceTotalsSerializer(serializers.Serializer):
     total_orders = serializers.IntegerField()
     completed_orders = serializers.IntegerField()
+    previously_billed = serializers.DecimalField(max_digits=14, decimal_places=2)
+    current_billed = serializers.DecimalField(max_digits=14, decimal_places=2)
     total_billed = serializers.DecimalField(max_digits=14, decimal_places=2)
     total_paid = serializers.DecimalField(max_digits=14, decimal_places=2)
     total_due = serializers.DecimalField(max_digits=14, decimal_places=2)

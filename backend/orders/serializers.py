@@ -56,6 +56,12 @@ class SavedEmailContactSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at", "updated_at")
 
 
+class OrderEmailSerializer(serializers.Serializer):
+    to_email = serializers.EmailField()
+    subject = serializers.CharField(max_length=255)
+    body = serializers.CharField()
+
+
 class OrderStatusAuditLogSerializer(serializers.ModelSerializer):
     changed_by_name = serializers.CharField(source="changed_by.username", read_only=True)
 

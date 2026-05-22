@@ -269,6 +269,8 @@ export type ClientInvoiceSummary = {
 export type ClientBalanceTotals = {
   total_orders: number;
   completed_orders: number;
+  previously_billed: string;
+  current_billed: string;
   total_billed: string;
   total_paid: string;
   total_due: string;

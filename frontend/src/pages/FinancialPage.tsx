@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { fetchCompanyProfile } from "../api/companyProfile";
-import { approveFinancial, createFinancial, unlockFinancial, updateFinancial } from "../api/financials";
+import { approveFinancial, createFinancial, updateFinancial } from "../api/financials";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
 import type { Client, CompanyProfile, Financial, Order } from "../types";
@@ -111,16 +111,36 @@ function calculateTotal(price: number | null, fuelingCharges: string, gst: numbe
   return (price ?? 0) + (numericFuelingCharges ?? 0) + (gst ?? 0);
 }
 
-function generateBsaInvoice(orderSerNo: string | undefined) {
-  if (!orderSerNo) {
-    return "";
+function buildClientInvoicePrefix(clientName: string | undefined) {
+  const words = (clientName || "").match(/[A-Za-z0-9]+/g) ?? [];
+  if (words.length === 0) {
+    return "INV";
   }
-  return orderSerNo.startsWith("ORD-") ? `BSA-${orderSerNo.slice(4)}` : `BSA-${orderSerNo}`;
+  if (words.length === 1) {
+    return words[0].toUpperCase().slice(0, 3) || "INV";
+  }
+  return words
+    .slice(0, 3)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("") || "INV";
+}
+
+function generateBsaInvoice(orderSerNo: string | undefined, clientName: string | undefined, orderDate?: string | undefined) {
+  const prefix = buildClientInvoicePrefix(clientName);
+  const match = (orderSerNo || "").match(/^ORD-(\d{8})-(\d+)$/);
+  if (match) {
+    return `${prefix}-${match[1].slice(2)}-${String(Number(match[2]))}`;
+  }
+  if (!orderDate) {
+    return prefix;
+  }
+  const compactDate = orderDate.replaceAll("-", "").slice(2);
+  return `${prefix}-${compactDate || "000000"}-1`;
 }
 
 function buildInvoiceFields(order: Order, financial: Financial): InvoiceField[] {
   return [
-    { label: "Invoice Number", value: financial.bsa_invoice || generateBsaInvoice(order.ser_no) || "--" },
+    { label: "Invoice Number", value: financial.bsa_invoice || generateBsaInvoice(order.ser_no, order.client_name, order.date) || "--" },
     { label: "Date", value: formatDate(financial.approved_at || financial.updated_at || order.date) },
     { label: "DR Number", value: financial.dr_no || order.dr_no || "--" },
     { label: "Qty", value: formatMoney(order.quantity_ltrs) },
@@ -164,7 +184,7 @@ export default function FinancialPage() {
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [savingFinancial, setSavingFinancial] = useState(false);
-  const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve" | "unlock">("");
+  const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve">("");
   const [form, setForm] = useState<FinancialForm>(emptyForm);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -190,7 +210,7 @@ export default function FinancialPage() {
             pso_invoice: payload.financial.pso_invoice,
             pso_rate: payload.financial.pso_rate ?? "",
             fueling_charges: payload.financial.fueling_charges ?? FIXED_FUELING_CHARGES,
-            bsa_invoice: payload.financial.bsa_invoice || generateBsaInvoice(payload.ser_no),
+            bsa_invoice: payload.financial.bsa_invoice || generateBsaInvoice(payload.ser_no, payload.client_name, payload.date),
             bsa_rate: payload.financial.bsa_rate ?? "",
             bsa_fueling_charges: payload.financial.bsa_fueling_charges ?? FIXED_FUELING_CHARGES,
           });
@@ -199,7 +219,7 @@ export default function FinancialPage() {
             ...current,
             dr_no: payload.dr_no,
             fueling_charges: FIXED_FUELING_CHARGES,
-            bsa_invoice: generateBsaInvoice(payload.ser_no),
+            bsa_invoice: generateBsaInvoice(payload.ser_no, payload.client_name, payload.date),
             bsa_fueling_charges: FIXED_FUELING_CHARGES,
           }));
         }
@@ -270,7 +290,7 @@ export default function FinancialPage() {
       const payload = {
         order: order.id,
         ...form,
-        bsa_invoice: generateBsaInvoice(order.ser_no),
+        bsa_invoice: generateBsaInvoice(order.ser_no, order.client_name, order.date),
         pso_price: formatDerivedAmount(psoPrice),
         bsa_price: formatDerivedAmount(bsaPrice),
       };
@@ -280,7 +300,7 @@ export default function FinancialPage() {
         : await createFinancial(payload);
       syncFinancialState(response);
       if (showSuccessMessage) {
-        setSuccess("Financials saved. You can now generate the invoice preview and download the PDF.");
+      setSuccess("Financials saved. You can now preview the invoice or download the PDF.");
       }
       return response;
     } catch {
@@ -315,24 +335,6 @@ export default function FinancialPage() {
       setSuccess("Invoice approved and locked.");
     } catch {
       setError("Unable to approve the invoice.");
-    } finally {
-      setInvoiceActionLoading("");
-    }
-  }
-
-  async function handleUnlockInvoice() {
-    if (!activeFinancial) {
-      return;
-    }
-    setError("");
-    setSuccess("");
-    setInvoiceActionLoading("unlock");
-    try {
-      const response = await unlockFinancial(activeFinancial.id);
-      syncFinancialState(response);
-      setSuccess("Invoice unlocked. You can edit and save it again.");
-    } catch {
-      setError("Unable to unlock the invoice.");
     } finally {
       setInvoiceActionLoading("");
     }
@@ -425,7 +427,7 @@ export default function FinancialPage() {
       doc.text("Prepared By", margin, cursorY + 6);
       doc.text("Authorized Signature", pageWidth - margin, cursorY + 6, { align: "right" });
 
-      doc.save(`${activeFinancial.bsa_invoice || generateBsaInvoice(order.ser_no) || "invoice"}.pdf`);
+      doc.save(`${activeFinancial.bsa_invoice || generateBsaInvoice(order.ser_no, order.client_name, order.date) || "invoice"}.pdf`);
     } catch {
       setError("Unable to generate invoice PDF.");
     } finally {
@@ -447,7 +449,7 @@ export default function FinancialPage() {
         {success && <Alert severity="success">{success}</Alert>}
         {isInvoiceLocked && activeFinancial && (
           <Alert severity="info">
-            Invoice is approved and read only. Approved on {formatDate(activeFinancial.approved_at)} by {activeFinancial.approved_by_name || "an admin"}.
+            Invoice is approved and read only. Approved on {formatDate(activeFinancial.approved_at)} by {activeFinancial.approved_by_name || "an admin"}. Use Admin Setup to unlock it for editing.
           </Alert>
         )}
 
@@ -584,15 +586,7 @@ export default function FinancialPage() {
                 <Button variant="outlined" onClick={() => navigate("/orders")}>
                   Cancel
                 </Button>
-                {activeFinancial && isInvoiceLocked ? (
-                  <Button
-                    variant="contained"
-                    onClick={handleUnlockInvoice}
-                    disabled={invoiceActionLoading === "unlock"}
-                  >
-                    {invoiceActionLoading === "unlock" ? "Unlocking..." : "Edit Invoice"}
-                  </Button>
-                ) : (
+                {!isInvoiceLocked && (
                   <>
                     <Button type="submit" variant="contained" disabled={savingFinancial || isInvoiceLocked}>
                       {savingFinancial ? "Saving..." : "Save Financials"}
@@ -609,12 +603,18 @@ export default function FinancialPage() {
                   </>
                 )}
                 {canGenerateInvoice && (
+                  <Button variant="outlined" startIcon={<ReceiptLongRoundedIcon />} onClick={() => setInvoicePreviewOpen(true)} disabled={invoicePreviewOpen}>
+                    Generate Invoice
+                  </Button>
+                )}
+                {canGenerateInvoice && (
                   <Button
                     variant="outlined"
-                    startIcon={<ReceiptLongRoundedIcon />}
-                    onClick={() => setInvoicePreviewOpen(true)}
+                    startIcon={<DownloadRoundedIcon />}
+                    onClick={handleDownloadInvoicePdf}
+                    disabled={downloadingPdf}
                   >
-                    Generate Invoice
+                    {downloadingPdf ? "Generating PDF..." : "Download PDF"}
                   </Button>
                 )}
               </Stack>
@@ -682,7 +682,7 @@ export default function FinancialPage() {
                 <Box>
                   <Typography variant="h5">Generated Invoice</Typography>
                   <Typography color="text.secondary">
-                    Invoice preview for {activeFinancial.bsa_invoice || generateBsaInvoice(order.ser_no)}
+                    Invoice preview for {activeFinancial.bsa_invoice || generateBsaInvoice(order.ser_no, order.client_name, order.date)}
                   </Typography>
                 </Box>
 
@@ -743,14 +743,6 @@ export default function FinancialPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setInvoicePreviewOpen(false)}>Close</Button>
-          <Button
-            variant="contained"
-            startIcon={<DownloadRoundedIcon />}
-            onClick={handleDownloadInvoicePdf}
-            disabled={!canGenerateInvoice || downloadingPdf}
-          >
-            {downloadingPdf ? "Generating PDF..." : "Download PDF"}
-          </Button>
         </DialogActions>
       </Dialog>
     </>

@@ -85,7 +85,7 @@ class FinancialSerializer(serializers.ModelSerializer):
         if order and order.status == OrderStatus.CANCELED:
             raise serializers.ValidationError({"order": "Financials cannot be attached to a canceled order."})
         if self.instance and self.instance.is_locked:
-            raise serializers.ValidationError({"detail": "Approved invoice is locked. Use Edit Invoice to unlock it first."})
+            raise serializers.ValidationError({"detail": "Approved invoice is locked. Unlock it from Admin Setup before editing."})
         return attrs
 
     def _sync_order_dr_no(self, financial: Financial):

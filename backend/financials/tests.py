@@ -52,6 +52,30 @@ class FinancialCalculationTests(TestCase):
         self.assertEqual(financial.bsa_gst, Decimal("216.00"))
         self.assertEqual(financial.bsa_total_price, Decimal("6516.00"))
 
+    def test_invoice_number_uses_client_prefix_date_and_sequence(self):
+        self.client.name = "Eagle Air"
+        self.client.save(update_fields=["name"])
+        order = Order.objects.create(
+            date=date(2026, 5, 1),
+            flight="PK2",
+            client=self.client,
+            aircraft=self.aircraft,
+            airport=self.airport,
+            route="KHI-LHE",
+            fuel_type=self.fuel_type,
+            quantity_ltrs=Decimal("100.00"),
+            created_by=self.user,
+        )
+
+        financial = Financial.objects.create(
+            order=order,
+            dr_no="DR-2",
+            pso_rate=Decimal("10.00"),
+            bsa_rate=Decimal("12.00"),
+        )
+
+        self.assertEqual(financial.bsa_invoice, "EA-260501-1")
+
 
 class CompanyProfileTests(TestCase):
     def test_company_profile_can_be_created_with_blank_defaults(self):

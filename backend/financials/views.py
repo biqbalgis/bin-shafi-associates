@@ -28,10 +28,10 @@ class FinancialViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminRole]
     filterset_class = FinancialFilter
     search_fields = ("order__ser_no", "order__client__name", "dr_no", "digital_invoice", "pso_invoice", "bsa_invoice")
-    ordering_fields = ("order__date", "created_at", "updated_at", "profit", "bsa_total_price", "approved_at")
+    ordering_fields = ("order__date", "created_at", "updated_at", "profit", "bsa_total_price", "approved_at", "id")
 
     def get_queryset(self):
-        return super().get_queryset().order_by("-order__date", "-updated_at")
+        return super().get_queryset().order_by("-order__date", "-approved_at", "-updated_at", "-created_at", "-id")
 
     @action(detail=True, methods=["post"], url_path="approve-invoice")
     def approve_invoice(self, request, pk=None):

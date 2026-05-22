@@ -40,6 +40,23 @@ function formatDate(value: string | null | undefined) {
   });
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "--";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function formatMoney(value: string | null | undefined) {
   if (!value) {
     return "--";
@@ -89,12 +106,26 @@ export default function InvoicesPage() {
     loadInvoices();
   }, [approvalStatus, client, dateFrom, dateTo, search]);
 
+  const sortedInvoices = [...invoices].sort((left, right) => {
+    const leftOrderTime = new Date(left.order_date).getTime();
+    const rightOrderTime = new Date(right.order_date).getTime();
+    if (leftOrderTime !== rightOrderTime) {
+      return rightOrderTime - leftOrderTime;
+    }
+    const leftUpdatedTime = new Date(left.approved_at || left.updated_at || left.created_at).getTime();
+    const rightUpdatedTime = new Date(right.approved_at || right.updated_at || right.created_at).getTime();
+    if (leftUpdatedTime !== rightUpdatedTime) {
+      return rightUpdatedTime - leftUpdatedTime;
+    }
+    return right.id - left.id;
+  });
+
   return (
     <Stack spacing={3}>
       <Box>
-        <Typography variant="h4">All Invoices</Typography>
-        <Typography color="text.secondary">
-          Review all generated invoices, filter the list, and open any invoice for edit or approval. Results are ordered by order date.
+                <Typography variant="h4">All Invoices</Typography>
+                <Typography color="text.secondary">
+          Review all generated invoices, filter the list, and open any invoice. Results are ordered by order date and invoice update time.
         </Typography>
       </Box>
 
@@ -175,14 +206,14 @@ export default function InvoicesPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {invoices.length === 0 && (
+            {sortedInvoices.length === 0 && (
               <TableRow>
                 <TableCell colSpan={10}>
                   <Typography color="text.secondary">No invoices found for the selected filters.</Typography>
                 </TableCell>
               </TableRow>
             )}
-            {invoices.map((invoice) => (
+            {sortedInvoices.map((invoice) => (
               <TableRow key={invoice.id} hover>
                 <TableCell>
                   <Typography fontWeight={700}>{invoice.bsa_invoice || "--"}</Typography>
@@ -190,7 +221,12 @@ export default function InvoicesPage() {
                     PSO {invoice.pso_invoice || "--"}
                   </Typography>
                 </TableCell>
-                <TableCell>{formatDate(invoice.order_date)}</TableCell>
+                <TableCell>
+                  <Typography>{formatDate(invoice.order_date)}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatDateTime(invoice.approved_at || invoice.updated_at || invoice.created_at)}
+                  </Typography>
+                </TableCell>
                 <TableCell>{invoice.order_ser_no}</TableCell>
                 <TableCell>{invoice.client_name}</TableCell>
                 <TableCell>{invoice.dr_no || "--"}</TableCell>
