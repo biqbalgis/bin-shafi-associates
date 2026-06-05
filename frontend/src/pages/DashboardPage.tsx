@@ -46,7 +46,7 @@ export default function DashboardPage() {
           <Typography variant="overline" sx={{ opacity: 0.72, letterSpacing: "0.16em" }}>
             Daily Ops Snapshot
           </Typography>
-          <Typography variant="h6" sx={{ mt: 1, maxWidth: 1680 }}>
+          <Typography variant="h5" sx={{ mt: 1, maxWidth: 1680 }}>
             Track aviation fuel demand, approvals, and profit closure without losing the order trail.
           </Typography>
           <Typography sx={{ mt: 1.5, opacity: 0.78 }}>
