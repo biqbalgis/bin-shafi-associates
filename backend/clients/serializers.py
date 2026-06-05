@@ -73,10 +73,6 @@ class BulkClientPaymentSerializer(serializers.Serializer):
         attrs = super().validate(attrs)
         client = attrs["client"]
         total_due = get_total_due_for_client(client)
-        if total_due <= Decimal("0.00"):
-            raise serializers.ValidationError({"client": "Selected client does not have any pending invoices."})
-        if attrs["amount"] > total_due:
-            raise serializers.ValidationError({"amount": "Amount paid cannot be greater than the client's total due amount."})
         attrs["pending_invoices"] = get_pending_invoices_for_client(client)
         attrs["total_due"] = total_due
         return attrs
@@ -86,6 +82,7 @@ class BulkClientPaymentResponseSerializer(serializers.Serializer):
     client = serializers.IntegerField()
     total_due = serializers.DecimalField(max_digits=14, decimal_places=2)
     amount_allocated = serializers.DecimalField(max_digits=14, decimal_places=2)
+    advance_amount = serializers.DecimalField(max_digits=14, decimal_places=2)
     allocation_count = serializers.IntegerField()
     allocations = BulkClientPaymentAllocationSerializer(many=True)
 

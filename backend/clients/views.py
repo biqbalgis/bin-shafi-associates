@@ -1,7 +1,7 @@
 from rest_framework import permissions, response, status, viewsets
 from rest_framework.decorators import action
 
-from .balances import build_client_statement, with_balance_annotations
+from .balances import ZERO, build_client_statement, quantize_money, with_balance_annotations
 from .payment_allocation import allocate_bulk_client_payment
 from .models import Client, ClientPayment
 from .serializers import (
@@ -76,12 +76,16 @@ class ClientPaymentViewSet(viewsets.ModelViewSet):
             reference=serializer.validated_data["reference"].strip(),
             created_by=request.user,
         )
+        invoice_payments = [payment for payment in created_payments if payment.order_id]
+        advance_amount = quantize_money(sum((payment.amount for payment in created_payments if not payment.order_id), ZERO))
+        amount_allocated = quantize_money(sum((payment.amount for payment in invoice_payments), ZERO))
         response_serializer = BulkClientPaymentResponseSerializer(
             {
                 "client": serializer.validated_data["client"].id,
                 "total_due": serializer.validated_data["total_due"],
-                "amount_allocated": serializer.validated_data["amount"],
-                "allocation_count": len(created_payments),
+                "amount_allocated": amount_allocated,
+                "advance_amount": advance_amount,
+                "allocation_count": len(invoice_payments),
                 "allocations": [
                     {
                         "payment_id": payment.id,
@@ -89,7 +93,7 @@ class ClientPaymentViewSet(viewsets.ModelViewSet):
                         "order_ser_no": payment.order.ser_no if payment.order_id else "",
                         "amount": payment.amount,
                     }
-                    for payment in created_payments
+                    for payment in invoice_payments
                 ],
             }
         )

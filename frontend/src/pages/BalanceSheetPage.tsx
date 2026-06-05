@@ -431,6 +431,10 @@ export default function BalanceSheetPage() {
 
   const depositTotal = dailyForm.pso_deposits.reduce((sum, deposit) => sum + parseAmount(deposit.amount), 0);
   const computedAmountDue = paymentForm.workflow === "BULK_PAYMENT" ? statement?.totals.total_due : selectedInvoice?.due_amount;
+  const enteredPaymentAmount = parseAmount(paymentForm.amount);
+  const positiveAmountDue = Math.max(0, parseAmount(computedAmountDue));
+  const bulkAdvancePreview =
+    paymentForm.workflow === "BULK_PAYMENT" ? Math.max(0, enteredPaymentAmount - positiveAmountDue) : 0;
   const psoDeposited = previousPsoDeposited + depositTotal;
   const psoConsumed = parseAmount(dailyForm.pso_consumed || psoSummary?.consumed);
   const psoBalance = psoDeposited - psoConsumed;
@@ -484,9 +488,9 @@ export default function BalanceSheetPage() {
       return;
     }
 
-    if (amountPaid > dueAmount) {
+    if (paymentForm.workflow === "INVOICE_PAYMENT" && amountPaid > dueAmount) {
       setSavingPayment(false);
-      setPaymentMessage({ type: "error", text: "Amount paid cannot be greater than the selected due amount." });
+      setPaymentMessage({ type: "error", text: "Invoice payment cannot be greater than the selected due amount. Use bulk payment to record advance payment." });
       return;
     }
 
@@ -503,14 +507,16 @@ export default function BalanceSheetPage() {
     }
 
     try {
+      let advanceAmount = 0;
       if (paymentForm.workflow === "BULK_PAYMENT") {
-        await createBulkClientPayment({
+        const response = await createBulkClientPayment({
           client: Number(paymentForm.clientId),
           amount: paymentForm.amount,
           date: paymentForm.date,
           payment_method: paymentForm.payment_method,
           reference: paymentForm.payment_reference,
         });
+        advanceAmount = parseAmount(response.advance_amount);
       } else {
         await createClientPayment({
           client: Number(paymentForm.clientId),
@@ -536,7 +542,9 @@ export default function BalanceSheetPage() {
         type: "success",
         text:
           paymentForm.workflow === "BULK_PAYMENT"
-            ? "Bulk client payment recorded and applied to the oldest pending invoices."
+            ? advanceAmount > 0
+              ? `Bulk client payment recorded. ${formatBalance(advanceAmount)} saved as advance payment.`
+              : "Bulk client payment recorded and applied to the oldest pending invoices."
             : "Client payment recorded.",
       });
     } catch (error) {
@@ -697,8 +705,12 @@ export default function BalanceSheetPage() {
             </Alert>
           )}
 
-          {paymentForm.clientId && pendingInvoices.length === 0 && !loadingStatement && (
+          {paymentForm.clientId && pendingInvoices.length === 0 && paymentForm.workflow === "INVOICE_PAYMENT" && !loadingStatement && (
             <Alert severity="info">No pending DR numbers found for the selected client.</Alert>
+          )}
+
+          {paymentForm.clientId && pendingInvoices.length === 0 && paymentForm.workflow === "BULK_PAYMENT" && !loadingStatement && (
+            <Alert severity="info">No pending DR numbers found. This payment will be saved as advance payment.</Alert>
           )}
 
           <Box
@@ -781,6 +793,7 @@ export default function BalanceSheetPage() {
               type="number"
               value={paymentForm.amount}
               onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))}
+              helperText={bulkAdvancePreview > 0 ? `Advance payment: ${formatBalance(bulkAdvancePreview)}` : undefined}
               fullWidth
             />
             <TextField

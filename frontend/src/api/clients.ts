@@ -1,5 +1,5 @@
 import { apiClient } from "./http";
-import type { ClientPaymentMethod, ClientStatement } from "../types";
+import type { BulkClientPaymentResponse, ClientPaymentMethod, ClientStatement } from "../types";
 
 export async function getClientStatement(clientId: number) {
   const response = await apiClient.get<ClientStatement>(`/clients/${clientId}/statement/`);
@@ -31,7 +31,7 @@ export async function createBulkClientPayment(payload: {
   payment_method: ClientPaymentMethod;
   reference: string;
 }) {
-  const response = await apiClient.post("/client-payments/bulk/", {
+  const response = await apiClient.post<BulkClientPaymentResponse>("/client-payments/bulk/", {
     ...payload,
     amount: payload.amount.trim(),
     reference: payload.reference.trim(),

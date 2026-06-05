@@ -71,4 +71,18 @@ def allocate_bulk_client_payment(
         )
         remaining_amount = quantize_money(remaining_amount - allocated_amount)
 
+    if remaining_amount > ZERO:
+        created_payments.append(
+            ClientPayment.objects.create(
+                client=client,
+                order=None,
+                amount=remaining_amount,
+                date=date,
+                payment_method=payment_method,
+                reference=reference,
+                notes="Advance payment",
+                created_by=created_by,
+            )
+        )
+
     return created_payments

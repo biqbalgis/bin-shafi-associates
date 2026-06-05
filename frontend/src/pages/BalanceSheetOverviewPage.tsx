@@ -15,6 +15,7 @@ import {
   TableBody,
   TableCell,
   TableContainer,
+  TableFooter,
   TableHead,
   TableRow,
   TextField,
@@ -198,6 +199,26 @@ export default function BalanceSheetOverviewPage() {
   const paidInvoices = invoices.filter((invoice) => invoice.payment_status === "PAID").length;
   const partiallyPaidInvoices = invoices.filter((invoice) => invoice.payment_status === "PARTIALLY_PAID").length;
   const unpaidInvoices = invoices.filter((invoice) => invoice.payment_status === "UNPAID").length;
+  const clientSnapshotTotals = useMemo(
+    () =>
+      clients.reduce(
+        (totals, client) => ({
+          totalOrders: totals.totalOrders + client.total_orders,
+          completedOrders: totals.completedOrders + client.completed_orders,
+          totalBilled: totals.totalBilled + parseAmount(client.total_billed),
+          totalPaid: totals.totalPaid + parseAmount(client.total_paid),
+          totalDue: totals.totalDue + parseAmount(client.total_due),
+        }),
+        {
+          totalOrders: 0,
+          completedOrders: 0,
+          totalBilled: 0,
+          totalPaid: 0,
+          totalDue: 0,
+        },
+      ),
+    [clients],
+  );
 
   return (
     <Stack spacing={3}>
@@ -273,6 +294,34 @@ export default function BalanceSheetOverviewPage() {
                     </TableRow>
                   ))}
                 </TableBody>
+                {clients.length > 0 && (
+                  <TableFooter>
+                    <TableRow
+                      sx={{
+                        "& td": {
+                          borderTop: "2px solid",
+                          borderColor: "divider",
+                          color: "text.primary",
+                          fontWeight: 800,
+                          pt: 2,
+                        },
+                      }}
+                    >
+                      <TableCell>
+                        <Typography fontWeight={800}>Total</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          All clients
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">{clientSnapshotTotals.totalOrders}</TableCell>
+                      <TableCell align="right">{clientSnapshotTotals.completedOrders}</TableCell>
+                      <TableCell align="right">{formatAmount(clientSnapshotTotals.totalBilled)}</TableCell>
+                      <TableCell align="right">{formatAmount(clientSnapshotTotals.totalPaid)}</TableCell>
+                      <TableCell align="right">{formatAmount(clientSnapshotTotals.totalDue)}</TableCell>
+                      <TableCell align="right" />
+                    </TableRow>
+                  </TableFooter>
+                )}
               </Table>
             </TableContainer>
           </Stack>

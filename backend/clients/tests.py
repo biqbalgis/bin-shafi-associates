@@ -11,6 +11,7 @@ from orders.models import Airport, FuelType, Order, OrderStatus, OrderStatusAudi
 from .balances import build_client_statement, with_balance_annotations
 from .models import Client, ClientPayment
 from .payment_allocation import allocate_bulk_client_payment, get_total_due_for_client
+from .serializers import BulkClientPaymentSerializer
 
 
 class ClientBalanceTests(TestCase):
@@ -146,3 +147,62 @@ class ClientBalanceTests(TestCase):
         )
 
         self.assertEqual(get_total_due_for_client(self.client), Decimal("16.00"))
+
+    def test_bulk_payment_records_excess_as_advance_payment(self):
+        first_order = self._create_completed_order(1, date(2026, 5, 1), Decimal("10.00"))
+        second_order = self._create_completed_order(2, date(2026, 5, 2), Decimal("10.00"))
+
+        payments = allocate_bulk_client_payment(
+            client=self.client,
+            amount=Decimal("25.00"),
+            date=date(2026, 5, 10),
+            payment_method="ACCOUNT_TRANSFER",
+            reference="BULK-25",
+            created_by=self.user,
+        )
+
+        self.assertEqual(len(payments), 3)
+        self.assertEqual([payment.order_id for payment in payments[:2]], [first_order.id, second_order.id])
+        self.assertIsNone(payments[2].order_id)
+        self.assertEqual(payments[2].amount, Decimal("5.00"))
+        self.assertEqual(payments[2].notes, "Advance payment")
+
+        statement = build_client_statement(self.client)
+        self.assertEqual(statement["totals"]["total_due"], Decimal("-5.00"))
+        self.assertEqual(statement["invoices"][0]["payment_status"], "PAID")
+        self.assertEqual(statement["invoices"][1]["payment_status"], "PAID")
+        self.assertEqual(statement["entries"][-1]["balance_after"], Decimal("-5.00"))
+
+    def test_bulk_payment_records_full_amount_as_advance_without_pending_invoices(self):
+        payments = allocate_bulk_client_payment(
+            client=self.client,
+            amount=Decimal("100.00"),
+            date=date(2026, 5, 10),
+            payment_method="ACCOUNT_TRANSFER",
+            reference="ADV-100",
+            created_by=self.user,
+        )
+
+        self.assertEqual(len(payments), 1)
+        self.assertIsNone(payments[0].order_id)
+        self.assertEqual(payments[0].amount, Decimal("100.00"))
+        self.assertEqual(get_total_due_for_client(self.client), Decimal("0.00"))
+
+        statement = build_client_statement(self.client)
+        self.assertEqual(statement["totals"]["total_due"], Decimal("-100.00"))
+        self.assertEqual(statement["entries"][0]["balance_after"], Decimal("-100.00"))
+
+    def test_bulk_payment_serializer_accepts_payment_above_client_due(self):
+        self._create_completed_order(1, date(2026, 5, 1), Decimal("10.00"))
+        serializer = BulkClientPaymentSerializer(
+            data={
+                "client": self.client.id,
+                "amount": "15.00",
+                "date": "2026-05-10",
+                "payment_method": "ACCOUNT_TRANSFER",
+                "reference": "ADV-15",
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["total_due"], Decimal("10.00"))

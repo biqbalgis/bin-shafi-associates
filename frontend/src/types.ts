@@ -252,6 +252,22 @@ export type ClientStatementPayment = {
   created_at: string;
 };
 
+export type BulkClientPaymentAllocation = {
+  payment_id: number;
+  order: number;
+  order_ser_no: string;
+  amount: string;
+};
+
+export type BulkClientPaymentResponse = {
+  client: number;
+  total_due: string;
+  amount_allocated: string;
+  advance_amount: string;
+  allocation_count: number;
+  allocations: BulkClientPaymentAllocation[];
+};
+
 export type ClientInvoiceSummary = {
   order_id: number;
   order_ser_no: string;
