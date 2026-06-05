@@ -430,7 +430,7 @@ export default function BalanceSheetPage() {
   );
 
   const depositTotal = dailyForm.pso_deposits.reduce((sum, deposit) => sum + parseAmount(deposit.amount), 0);
-  const computedClientDue = paymentForm.workflow === "BULK_PAYMENT" ? statement?.totals.total_due : selectedInvoice?.due_amount;
+  const computedAmountDue = paymentForm.workflow === "BULK_PAYMENT" ? statement?.totals.total_due : selectedInvoice?.due_amount;
   const psoDeposited = previousPsoDeposited + depositTotal;
   const psoConsumed = parseAmount(dailyForm.pso_consumed || psoSummary?.consumed);
   const psoBalance = psoDeposited - psoConsumed;
@@ -476,7 +476,7 @@ export default function BalanceSheetPage() {
     }
 
     const amountPaid = parseAmount(paymentForm.amount);
-    const dueAmount = parseAmount(computedClientDue);
+    const dueAmount = parseAmount(computedAmountDue);
 
     if (amountPaid <= 0) {
       setSavingPayment(false);
@@ -659,9 +659,9 @@ export default function BalanceSheetPage() {
             />
           )}
           <SummaryCard
-            label="Client Due"
-            value={formatBalance(statement?.totals.total_due)}
-            caption={selectedClient ? `${selectedClient.name} outstanding balance` : "Select a client"}
+            label="Client Total"
+            value={formatBalance(statement?.totals.total_billed)}
+            caption={selectedClient ? `${selectedClient.name} total billed so far` : "Select a client"}
           />
           <SummaryCard
             label="Pending DRs"
@@ -670,14 +670,14 @@ export default function BalanceSheetPage() {
           />
           <SummaryCard
             label="Amount Due"
-            value={formatBalance(computedClientDue)}
+            value={formatBalance(computedAmountDue)}
             caption={
               paymentForm.workflow === "BULK_PAYMENT"
                 ? selectedClient
                   ? `${selectedClient.name} total pending amount`
                   : "Choose a client"
                 : selectedInvoice
-                  ? `${selectedInvoice.dr_no || selectedInvoice.order_ser_no} pending`
+                  ? `${selectedInvoice.dr_no || selectedInvoice.order_ser_no} pending amount`
                   : "Choose a DR number"
             }
           />
@@ -775,7 +775,7 @@ export default function BalanceSheetPage() {
               </TextField>
             )}
 
-            <TextField label="Amount Due" value={formatBalance(computedClientDue)} InputProps={{ readOnly: true }} fullWidth />
+            <TextField label="Amount Due" value={formatBalance(computedAmountDue)} InputProps={{ readOnly: true }} fullWidth />
             <TextField
               label="Amount Paid"
               type="number"
