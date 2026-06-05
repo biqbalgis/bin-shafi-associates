@@ -6,6 +6,17 @@ from .models import CompanyProfile, Financial
 
 
 class CompanyProfileSerializer(serializers.ModelSerializer):
+    def validate_signature_image(self, value):
+        if not value:
+            return value
+        valid_extensions = (".png", ".jpg", ".jpeg")
+        file_name = value.name.lower()
+        if not file_name.endswith(valid_extensions):
+            raise serializers.ValidationError("Upload a PNG, JPG, or JPEG image.")
+        if value.size > 2 * 1024 * 1024:
+            raise serializers.ValidationError("Signature image must be 2MB or smaller.")
+        return value
+
     class Meta:
         model = CompanyProfile
         fields = (
@@ -14,6 +25,7 @@ class CompanyProfileSerializer(serializers.ModelSerializer):
             "address",
             "phone",
             "email",
+            "signature_image",
             "created_at",
             "updated_at",
         )
@@ -45,6 +57,7 @@ class FinancialSerializer(serializers.ModelSerializer):
             "pso_gst",
             "pso_total_price",
             "bsa_invoice",
+            "invoice_generated_at",
             "bsa_rate",
             "bsa_price",
             "bsa_fueling_charges",
@@ -65,6 +78,7 @@ class FinancialSerializer(serializers.ModelSerializer):
             "pso_price",
             "fueling_charges",
             "bsa_invoice",
+            "invoice_generated_at",
             "bsa_price",
             "bsa_fueling_charges",
             "pso_gst",

@@ -19,7 +19,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { fetchCompanyProfile } from "../api/companyProfile";
-import { approveFinancial, createFinancial, updateFinancial } from "../api/financials";
+import { approveFinancial, createFinancial, generateInvoice, updateFinancial } from "../api/financials";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
 import type { Client, CompanyProfile, Financial, Order } from "../types";
@@ -166,6 +166,10 @@ async function loadImageAsDataUrl(path: string) {
   });
 }
 
+function getImageFormatFromDataUrl(dataUrl: string) {
+  return dataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
+}
+
 function drawWrappedRightAlignedText(doc: InstanceType<typeof import("jspdf").jsPDF>, lines: string[], x: number, y: number, maxWidth: number, lineHeight: number) {
   let currentY = y;
   lines.forEach((line) => {
@@ -188,7 +192,7 @@ export default function FinancialPage() {
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [savingFinancial, setSavingFinancial] = useState(false);
-  const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve">("");
+  const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve" | "generate">("");
   const [form, setForm] = useState<FinancialForm>(emptyForm);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -253,6 +257,7 @@ export default function FinancialPage() {
   const profitPreview = ((bsaPrice ?? 0) - (psoPrice ?? 0)).toFixed(2);
   const activeFinancial = savedFinancial ?? order?.financial ?? null;
   const canGenerateInvoice = Boolean(order && activeFinancial);
+  const isInvoiceGenerated = Boolean(activeFinancial?.invoice_generated_at);
   const isInvoiceLocked = Boolean(activeFinancial?.is_locked);
 
   const invoiceFields = order && activeFinancial ? buildInvoiceFields(order, activeFinancial) : [];
@@ -268,6 +273,7 @@ export default function FinancialPage() {
     phone: invoiceClient?.contact_phone || "Phone not configured",
     email: invoiceClient?.contact_email || "Email not configured",
   };
+  const signatureImageSrc = companyProfile?.signature_image || "";
 
   function syncFinancialState(response: Financial) {
     setSavedFinancial(response);
@@ -344,8 +350,31 @@ export default function FinancialPage() {
     }
   }
 
+  async function handleGenerateInvoice() {
+    if (!activeFinancial) {
+      return;
+    }
+    if (activeFinancial.invoice_generated_at) {
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setInvoiceActionLoading("generate");
+    try {
+      const response = await generateInvoice(activeFinancial.id);
+      syncFinancialState(response);
+      setInvoicePreviewOpen(true);
+      setSuccess("Invoice generated. You can download the PDF any time.");
+    } catch {
+      setError("Unable to generate the invoice.");
+    } finally {
+      setInvoiceActionLoading("");
+    }
+  }
+
   async function handleDownloadInvoicePdf() {
-    if (!order || !activeFinancial) {
+    if (!order || !activeFinancial || !isInvoiceGenerated) {
       return;
     }
     setDownloadingPdf(true);
@@ -353,6 +382,9 @@ export default function FinancialPage() {
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "mm", format: "a4" });
       const logoDataUrl = await loadImageAsDataUrl(COMPANY_LOGO_PATH);
+      const signatureDataUrl = signatureImageSrc
+        ? await loadImageAsDataUrl(signatureImageSrc).catch(() => "")
+        : "";
       const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 16;
       let cursorY = 18;
@@ -424,6 +456,16 @@ export default function FinancialPage() {
       doc.text("Signature", margin, cursorY);
       cursorY += 18;
 
+      if (signatureDataUrl) {
+        doc.addImage(
+          signatureDataUrl,
+          getImageFormatFromDataUrl(signatureDataUrl),
+          pageWidth - margin - 66,
+          cursorY - 17,
+          66,
+          15,
+        );
+      }
       doc.setLineWidth(0.4);
       doc.line(margin, cursorY, margin + 70, cursorY);
       doc.line(pageWidth - margin - 70, cursorY, pageWidth - margin, cursorY);
@@ -607,8 +649,17 @@ export default function FinancialPage() {
                   </>
                 )}
                 {canGenerateInvoice && (
-                  <Button variant="outlined" startIcon={<ReceiptLongRoundedIcon />} onClick={() => setInvoicePreviewOpen(true)} disabled={invoicePreviewOpen}>
-                    Generate Invoice
+                  <Button
+                    variant="outlined"
+                    startIcon={<ReceiptLongRoundedIcon />}
+                    onClick={() => void handleGenerateInvoice()}
+                    disabled={invoicePreviewOpen || invoiceActionLoading === "generate" || isInvoiceGenerated}
+                  >
+                    {isInvoiceGenerated
+                      ? "Invoice Generated"
+                      : invoiceActionLoading === "generate"
+                        ? "Generating..."
+                        : "Generate Invoice"}
                   </Button>
                 )}
                 {canGenerateInvoice && (
@@ -616,7 +667,7 @@ export default function FinancialPage() {
                     variant="outlined"
                     startIcon={<DownloadRoundedIcon />}
                     onClick={handleDownloadInvoicePdf}
-                    disabled={downloadingPdf}
+                    disabled={downloadingPdf || !isInvoiceGenerated}
                   >
                     {downloadingPdf ? "Generating PDF..." : "Download PDF"}
                   </Button>
@@ -733,7 +784,25 @@ export default function FinancialPage() {
                     </Typography>
                   </Box>
                   <Box>
-                    <Box sx={{ borderBottom: "1px solid rgba(24,49,83,0.4)", height: 44 }} />
+                    <Box
+                      sx={{
+                        borderBottom: "1px solid rgba(24,49,83,0.4)",
+                        height: 64,
+                        display: "flex",
+                        alignItems: "flex-end",
+                        justifyContent: { xs: "flex-start", sm: "flex-end" },
+                        pb: 0.75,
+                      }}
+                    >
+                      {signatureImageSrc && (
+                        <Box
+                          component="img"
+                          src={signatureImageSrc}
+                          alt="Authorized signature"
+                          sx={{ maxWidth: 180, maxHeight: 52, objectFit: "contain" }}
+                        />
+                      )}
+                    </Box>
                     <Typography sx={{ pt: 1 }} color="text.secondary">
                       Authorized Signature
                     </Typography>

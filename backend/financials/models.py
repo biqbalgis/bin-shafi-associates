@@ -41,6 +41,7 @@ class CompanyProfile(models.Model):
     address = models.TextField(blank=True)
     phone = models.CharField(max_length=255, blank=True)
     email = models.EmailField(blank=True)
+    signature_image = models.FileField(upload_to="company/signatures/", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,6 +65,7 @@ class Financial(models.Model):
     pso_gst = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     pso_total_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     bsa_invoice = models.CharField(max_length=100, blank=True)
+    invoice_generated_at = models.DateTimeField(null=True, blank=True)
     bsa_rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     bsa_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     bsa_fueling_charges = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
@@ -151,6 +153,12 @@ class Financial(models.Model):
         self.approved_at = None
         self.approved_by = None
         self.save(update_fields=["is_locked", "approved_at", "approved_by", "updated_at"])
+
+    def mark_invoice_generated(self):
+        if self.invoice_generated_at:
+            return
+        self.invoice_generated_at = timezone.now()
+        self.save(update_fields=["invoice_generated_at", "updated_at"])
 
     def save(self, *args, **kwargs):
         self.bsa_invoice = self._generate_bsa_invoice()

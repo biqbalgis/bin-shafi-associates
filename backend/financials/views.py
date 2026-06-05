@@ -1,5 +1,6 @@
 from django_filters import rest_framework as filters
 from rest_framework import status, viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -47,6 +48,13 @@ class FinancialViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(financial)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["post"], url_path="generate-invoice")
+    def generate_invoice(self, request, pk=None):
+        financial = self.get_object()
+        financial.mark_invoice_generated()
+        serializer = self.get_serializer(financial)
+        return Response(serializer.data)
+
     @action(detail=True, methods=["post"], url_path="unlock-invoice")
     def unlock_invoice(self, request, pk=None):
         financial = self.get_object()
@@ -58,6 +66,8 @@ class FinancialViewSet(viewsets.ModelViewSet):
 
 
 class CompanyProfileView(APIView):
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
     def get_permissions(self):
         if self.request.method == "GET":
             return [AllowAny()]
@@ -70,17 +80,17 @@ class CompanyProfileView(APIView):
         return CompanyProfile.objects.create()
 
     def get(self, request):
-        serializer = CompanyProfileSerializer(self.get_object())
+        serializer = CompanyProfileSerializer(self.get_object(), context={"request": request})
         return Response(serializer.data)
 
     def put(self, request):
-        serializer = CompanyProfileSerializer(self.get_object(), data=request.data)
+        serializer = CompanyProfileSerializer(self.get_object(), data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
 
     def patch(self, request):
-        serializer = CompanyProfileSerializer(self.get_object(), data=request.data, partial=True)
+        serializer = CompanyProfileSerializer(self.get_object(), data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)

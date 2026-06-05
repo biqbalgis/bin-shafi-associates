@@ -101,6 +101,7 @@ export type CompanyProfile = {
   address: string;
   phone: string;
   email: string;
+  signature_image: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -131,6 +132,7 @@ export type Financial = {
   pso_gst: string | null;
   pso_total_price: string | null;
   bsa_invoice: string;
+  invoice_generated_at: string | null;
   bsa_rate: string | null;
   bsa_price: string | null;
   bsa_fueling_charges: string | null;

@@ -17,3 +17,10 @@ export async function updateCompanyProfile(payload: CompanyProfilePayload) {
   const response = await apiClient.put<CompanyProfile>("/company-profile/", payload);
   return response.data;
 }
+
+export async function updateCompanySignature(signatureImage: File) {
+  const formData = new FormData();
+  formData.append("signature_image", signatureImage);
+  const response = await apiClient.patch<CompanyProfile>("/company-profile/", formData);
+  return response.data;
+}

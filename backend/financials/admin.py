@@ -5,7 +5,7 @@ from .models import CompanyProfile, Financial
 
 @admin.register(CompanyProfile)
 class CompanyProfileAdmin(admin.ModelAdmin):
-    list_display = ("company_name", "phone", "email", "updated_at")
+    list_display = ("company_name", "phone", "email", "signature_image", "updated_at")
 
 
 @admin.register(Financial)

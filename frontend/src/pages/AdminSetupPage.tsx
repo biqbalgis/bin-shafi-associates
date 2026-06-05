@@ -22,7 +22,7 @@ import {
   createFuelType,
   createRouteOption,
 } from "../api/adminSetup";
-import { fetchCompanyProfile, updateCompanyProfile } from "../api/companyProfile";
+import { fetchCompanyProfile, updateCompanyProfile, updateCompanySignature } from "../api/companyProfile";
 import {
   fetchAircrafts,
   fetchAirports,
@@ -90,6 +90,8 @@ export default function AdminSetupPage() {
   const [savedEmailContacts, setSavedEmailContacts] = useState<SavedEmailContact[]>([]);
   const [orderMailEmails, setOrderMailEmails] = useState([""]);
   const [savingOrderMail, setSavingOrderMail] = useState(false);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [savingSignature, setSavingSignature] = useState(false);
 
   const [clientForm, setClientForm] = useState({
     name: "",
@@ -218,6 +220,26 @@ export default function AdminSetupPage() {
     }
   }
 
+  async function handleSaveSignature() {
+    if (!signatureFile) {
+      setMessage({ type: "error", text: "Choose a signature image before saving." });
+      return;
+    }
+
+    setSavingSignature(true);
+    setMessage(null);
+    try {
+      const savedProfile = await updateCompanySignature(signatureFile);
+      setCompanyProfile(savedProfile);
+      setSignatureFile(null);
+      setMessage({ type: "success", text: "Authorized signature saved." });
+    } catch {
+      setMessage({ type: "error", text: "Unable to save the signature image." });
+    } finally {
+      setSavingSignature(false);
+    }
+  }
+
   return (
     <Stack spacing={3}>
       <Box>
@@ -280,6 +302,60 @@ export default function AdminSetupPage() {
           >
             Save Company Details
           </Button>
+        </Stack>
+      </SectionCard>
+
+      <SectionCard title="Authorized Signature" description="Upload the signature image used on generated invoices.">
+        <Stack spacing={2}>
+          {companyProfile?.signature_image ? (
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Current signature
+              </Typography>
+              <Box
+                component="img"
+                src={companyProfile.signature_image}
+                alt="Authorized signature"
+                sx={{
+                  width: 240,
+                  maxWidth: "100%",
+                  height: 96,
+                  objectFit: "contain",
+                  border: "1px solid rgba(24,49,83,0.16)",
+                  borderRadius: 1,
+                  bgcolor: "#ffffff",
+                  p: 1,
+                }}
+              />
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No signature image uploaded yet.
+            </Typography>
+          )}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }}>
+            <Button variant="outlined" component="label">
+              Choose Signature
+              <input
+                hidden
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={(event) => setSignatureFile(event.target.files?.[0] ?? null)}
+              />
+            </Button>
+            <Typography variant="body2" color="text.secondary">
+              {signatureFile ? signatureFile.name : "PNG, JPG, or JPEG. Max 2MB."}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="flex-end">
+            <Button
+              variant="contained"
+              onClick={() => void handleSaveSignature()}
+              disabled={!signatureFile || savingSignature}
+            >
+              {savingSignature ? "Saving..." : "Save Signature"}
+            </Button>
+          </Stack>
         </Stack>
       </SectionCard>
 

@@ -51,6 +51,11 @@ export async function approveFinancial(id: number) {
   return response.data;
 }
 
+export async function generateInvoice(id: number) {
+  const response = await apiClient.post<Financial>(`/financials/${id}/generate-invoice/`);
+  return response.data;
+}
+
 export async function unlockFinancial(id: number) {
   const response = await apiClient.post<Financial>(`/financials/${id}/unlock-invoice/`);
   return response.data;
