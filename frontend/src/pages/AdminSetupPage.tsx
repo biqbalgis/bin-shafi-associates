@@ -33,7 +33,19 @@ import {
   fetchRouteOptions,
 } from "../api/dropdowns";
 import { listFinancials, unlockFinancial } from "../api/financials";
-import type { Aircraft, Airport, Client, CompanyProfile, Financial, FlightOption, FuelCategory, FuelType, RouteOption } from "../types";
+import { createSavedEmailContact, listSavedEmailContacts } from "../api/orders";
+import type {
+  Aircraft,
+  Airport,
+  Client,
+  CompanyProfile,
+  Financial,
+  FlightOption,
+  FuelCategory,
+  FuelType,
+  RouteOption,
+  SavedEmailContact,
+} from "../types";
 
 function SectionCard({
   title,
@@ -75,6 +87,9 @@ export default function AdminSetupPage() {
   const [approvedInvoices, setApprovedInvoices] = useState<Financial[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [unlockingInvoice, setUnlockingInvoice] = useState(false);
+  const [savedEmailContacts, setSavedEmailContacts] = useState<SavedEmailContact[]>([]);
+  const [orderMailEmails, setOrderMailEmails] = useState([""]);
+  const [savingOrderMail, setSavingOrderMail] = useState(false);
 
   const [clientForm, setClientForm] = useState({
     name: "",
@@ -108,7 +123,18 @@ export default function AdminSetupPage() {
 
   async function reloadData() {
     try {
-      const [clientsData, aircraftsData, airportsData, fuelTypesData, fuelCategoriesData, flightsData, routesData, companyProfileData, approvedInvoicesData] =
+      const [
+        clientsData,
+        aircraftsData,
+        airportsData,
+        fuelTypesData,
+        fuelCategoriesData,
+        flightsData,
+        routesData,
+        companyProfileData,
+        approvedInvoicesData,
+        savedEmailContactsData,
+      ] =
         await Promise.all([
           fetchClients(),
           fetchAircrafts(),
@@ -119,6 +145,7 @@ export default function AdminSetupPage() {
           fetchRouteOptions(),
           fetchCompanyProfile(),
           listFinancials({ approvalStatus: "approved" }),
+          listSavedEmailContacts(),
         ]);
 
       setClients(clientsData);
@@ -130,6 +157,7 @@ export default function AdminSetupPage() {
       setRoutes(routesData);
       setCompanyProfile(companyProfileData);
       setApprovedInvoices(approvedInvoicesData);
+      setSavedEmailContacts(savedEmailContactsData);
       setSelectedInvoiceId((current) => {
         if (current && approvedInvoicesData.some((invoice) => String(invoice.id) === current)) {
           return current;
@@ -160,6 +188,33 @@ export default function AdminSetupPage() {
       setMessage({ type: "success", text: successText });
     } catch {
       setMessage({ type: "error", text: "Request failed. Check required fields and uniqueness." });
+    }
+  }
+
+  async function handleSaveOrderMailEmails() {
+    const existingEmails = new Set(savedEmailContacts.map((contact) => contact.email.toLowerCase()));
+    const nextEmails = Array.from(
+      new Set(orderMailEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))
+    ).filter((email) => !existingEmails.has(email));
+
+    if (nextEmails.length === 0) {
+      setMessage({ type: "error", text: "Enter at least one new email address that is not already saved." });
+      return;
+    }
+
+    setSavingOrderMail(true);
+    setMessage(null);
+    try {
+      for (const email of nextEmails) {
+        await createSavedEmailContact({ email });
+      }
+      setOrderMailEmails([""]);
+      await reloadData();
+      setMessage({ type: "success", text: "Order mail recipients saved." });
+    } catch {
+      setMessage({ type: "error", text: "Unable to save one or more email addresses." });
+    } finally {
+      setSavingOrderMail(false);
     }
   }
 
@@ -272,6 +327,53 @@ export default function AdminSetupPage() {
               {unlockingInvoice ? "Unlocking..." : "Edit Invoice"}
             </Button>
           </Stack>
+        </Stack>
+      </SectionCard>
+
+      <SectionCard title="Order Mail" description="Save recipient emails used when sending pending order details.">
+        <Stack spacing={2}>
+          {orderMailEmails.map((email, index) => (
+            <TextField
+              key={index}
+              label={`Email ${index + 1}`}
+              type="email"
+              value={email}
+              onChange={(event) =>
+                setOrderMailEmails((current) =>
+                  current.map((value, itemIndex) => (itemIndex === index ? event.target.value : value))
+                )
+              }
+              fullWidth
+            />
+          ))}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="space-between">
+            <Button variant="outlined" onClick={() => setOrderMailEmails((current) => [...current, ""])}>
+              Add Another Email
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => void handleSaveOrderMailEmails()}
+              disabled={savingOrderMail || orderMailEmails.every((email) => !email.trim())}
+            >
+              {savingOrderMail ? "Saving..." : "Save Emails"}
+            </Button>
+          </Stack>
+          <Divider />
+          <Box>
+            <Typography variant="subtitle1">Saved Emails ({savedEmailContacts.length})</Typography>
+            <Stack spacing={0.75} sx={{ mt: 1 }}>
+              {savedEmailContacts.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  No order mail recipients saved yet.
+                </Typography>
+              )}
+              {savedEmailContacts.map((contact) => (
+                <Typography key={contact.id} variant="body2">
+                  {contact.email}
+                </Typography>
+              ))}
+            </Stack>
+          </Box>
         </Stack>
       </SectionCard>
 

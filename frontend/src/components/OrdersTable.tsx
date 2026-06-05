@@ -1,4 +1,4 @@
-import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
+import EmailRoundedIcon from "@mui/icons-material/EmailRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import {
   Button,
@@ -25,12 +25,12 @@ export default function OrdersTable({
   orders,
   role,
   onOrderUpdate,
-  onSelectOrder,
+  onSendOrderEmail,
 }: {
   orders: Order[];
   role: string;
   onOrderUpdate?: (orderId: number, payload: { status?: OrderStatus; dr_no?: string }) => void;
-  onSelectOrder?: (order: Order) => void;
+  onSendOrderEmail?: (order: Order) => void;
 }) {
   const [drNoDrafts, setDrNoDrafts] = useState<Record<number, string>>({});
 
@@ -146,14 +146,14 @@ export default function OrdersTable({
               </TableCell>
               <TableCell align="right">
                 <Stack direction="row" spacing={1} justifyContent="flex-end">
-                  {role === "MANAGER" && onSelectOrder && (
+                  {role !== "CUSTOMER" && order.status === "PENDING" && onSendOrderEmail && (
                     <Button
                       size="small"
                       variant="text"
-                      startIcon={<OpenInNewRoundedIcon />}
-                      onClick={() => onSelectOrder(order)}
+                      startIcon={<EmailRoundedIcon />}
+                      onClick={() => onSendOrderEmail(order)}
                     >
-                      Approval Email
+                      Email
                     </Button>
                   )}
                   {role === "ADMIN" && (

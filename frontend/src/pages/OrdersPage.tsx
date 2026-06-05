@@ -19,12 +19,45 @@ import {
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { createSavedEmailContact, listOrders, listSavedEmailContacts, updateOrder } from "../api/orders";
+import { listOrders, listSavedEmailContacts, sendOrderEmail, updateOrder } from "../api/orders";
 import OrdersTable from "../components/OrdersTable";
 import { useAuth } from "../context/AuthContext";
 import type { Order, OrderScope, OrderStatus, SavedEmailContact } from "../types";
 
-type EmailField = "approval_email_to" | "approval_email_cc";
+function buildPendingOrderEmailSubject(order: Order) {
+  return `Pending fuel order ${order.ser_no} - ${order.client_name}`;
+}
+
+function buildPendingOrderEmailBody(order: Order) {
+  return [
+    "Dear Team,",
+    "",
+    "A new aviation fuel order is pending approval. Please review the order details below.",
+    "",
+    `Serial No: ${order.ser_no}`,
+    `Order Date: ${new Date(order.date).toLocaleDateString()}`,
+    `Status: ${order.status}`,
+    `Flight: ${order.flight}`,
+    `Flight Status: ${order.flight_status === "DOMESTIC" ? "Domestic" : "International"}`,
+    `Client: ${order.client_name}`,
+    `Aircraft: ${order.aircraft_registration}`,
+    `Airport: ${order.airport_name}`,
+    `Route: ${order.route}`,
+    `Fuel Type: ${order.fuel_type_name}`,
+    `Quantity: ${Number(order.quantity_ltrs).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} Ltrs`,
+    `DR No: ${order.dr_no || "Not assigned"}`,
+    `Created By: ${order.created_by_name}`,
+    `Created At: ${new Date(order.created_at).toLocaleString()}`,
+    "",
+    "The order PDF is attached for your records.",
+    "",
+    "Regards,",
+    "Bin Shafi Aviation Fuel System",
+  ].join("\n");
+}
 
 export default function OrdersPage() {
   const { user } = useAuth();
@@ -33,12 +66,13 @@ export default function OrdersPage() {
   const [status, setStatus] = useState<OrderStatus | "">("");
   const [scope, setScope] = useState<OrderScope>(user?.role === "CUSTOMER" ? "active" : "all");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [savedEmailContacts, setSavedEmailContacts] = useState<SavedEmailContact[]>([]);
-  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
-  const [emailFieldTarget, setEmailFieldTarget] = useState<EmailField>("approval_email_to");
-  const [emailForm, setEmailForm] = useState({ name: "", email: "" });
+  const [emailOrder, setEmailOrder] = useState<Order | null>(null);
+  const [selectedRecipient, setSelectedRecipient] = useState("");
+  const [confirmEmailOpen, setConfirmEmailOpen] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     if (user?.role === "CUSTOMER") {
@@ -61,7 +95,6 @@ export default function OrdersPage() {
     try {
       const payload = await listOrders({ search, status, scope });
       setOrders(payload);
-      setSelectedOrder((current) => payload.find((order) => order.id === current?.id) ?? payload[0] ?? null);
     } catch {
       setError("Unable to load orders.");
     } finally {
@@ -73,6 +106,7 @@ export default function OrdersPage() {
     try {
       const payload = await listSavedEmailContacts();
       setSavedEmailContacts(payload);
+      setSelectedRecipient((current) => current || payload[0]?.email || "");
     } catch {
       setError("Unable to load saved email recipients.");
     }
@@ -83,7 +117,7 @@ export default function OrdersPage() {
   }, [search, status, scope]);
 
   useEffect(() => {
-    if (user?.role === "MANAGER") {
+    if (user?.role && user.role !== "CUSTOMER") {
       loadSavedContacts();
     }
   }, [user?.role]);
@@ -100,59 +134,38 @@ export default function OrdersPage() {
     }
   }
 
-  async function handleCreateSavedEmail() {
-    try {
-      const created = await createSavedEmailContact({
-        name: emailForm.name.trim() || undefined,
-        email: emailForm.email.trim(),
-      });
-      setEmailDialogOpen(false);
-      setEmailForm({ name: "", email: "" });
-      await loadSavedContacts();
-      if (selectedOrder) {
-        await handleOrderUpdate(selectedOrder.id, { [emailFieldTarget]: created.email });
-      }
-    } catch {
-      setError("Unable to save the email recipient.");
-    }
+  function openOrderEmailDialog(order: Order) {
+    setError("");
+    setSuccess("");
+    setEmailOrder(order);
+    setSelectedRecipient(order.approval_email_to || savedEmailContacts[0]?.email || "");
   }
 
-  function openEmailDialog(target: EmailField) {
-    setEmailFieldTarget(target);
-    setEmailDialogOpen(true);
-  }
-
-  function generateApprovalEmail(order: Order) {
-    if (!order.approval_email_to) {
-      setError("Select a saved recipient before generating the approval email.");
+  async function handleSendOrderEmail() {
+    if (!emailOrder || !selectedRecipient) {
+      setError("Select a recipient before sending the order email.");
       return;
     }
 
-    const subject = `Approval request for ${order.ser_no}`;
-    const body = [
-      "Please confirm approval for the following fuel order.",
-      "",
-      `Serial No: ${order.ser_no}`,
-      `Date: ${new Date(order.date).toLocaleDateString()}`,
-      `Flight: ${order.flight}`,
-      `Client: ${order.client_name}`,
-      `Aircraft: ${order.aircraft_registration}`,
-      `Airport: ${order.airport_name}`,
-      `Route: ${order.route}`,
-      `Fuel Type: ${order.fuel_type_name}`,
-      `Quantity (Ltrs): ${Number(order.quantity_ltrs).toLocaleString()}`,
-      "",
-      "Reply to this email once approval is received so the order can be marked approved manually.",
-    ].join("\n");
-
-    const params = new URLSearchParams({
-      subject,
-      body,
-    });
-    if (order.approval_email_cc) {
-      params.set("cc", order.approval_email_cc);
+    setSendingEmail(true);
+    setError("");
+    setSuccess("");
+    try {
+      await sendOrderEmail(emailOrder.id, {
+        to_email: selectedRecipient,
+        subject: buildPendingOrderEmailSubject(emailOrder),
+        body: buildPendingOrderEmailBody(emailOrder),
+      });
+      await updateOrder(emailOrder.id, { approval_email_to: selectedRecipient });
+      await loadOrders();
+      setSuccess(`Order email sent to ${selectedRecipient}.`);
+      setConfirmEmailOpen(false);
+      setEmailOrder(null);
+    } catch {
+      setError("Unable to send the order email.");
+    } finally {
+      setSendingEmail(false);
     }
-    window.location.href = `mailto:${encodeURIComponent(order.approval_email_to)}?${params.toString()}`;
   }
 
   const scopeTabs =
@@ -232,105 +245,81 @@ export default function OrdersPage() {
       </Card>
 
       {error && <Alert severity="error">{error}</Alert>}
+      {success && <Alert severity="success">{success}</Alert>}
       {loading && <Alert severity="info">Refreshing orders...</Alert>}
 
       <OrdersTable
         orders={orders}
         role={user?.role ?? "CUSTOMER"}
         onOrderUpdate={handleOrderUpdate}
-        onSelectOrder={user?.role === "MANAGER" ? setSelectedOrder : undefined}
+        onSendOrderEmail={user?.role && user.role !== "CUSTOMER" ? openOrderEmailDialog : undefined}
       />
 
-      {user?.role === "MANAGER" && selectedOrder && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Approval Email / {selectedOrder.ser_no}
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              {selectedOrder.flight} ({selectedOrder.flight_status === "DOMESTIC" ? "Domestic" : "International"}) / {selectedOrder.client_name} / {selectedOrder.aircraft_registration}
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 2 }}>
-              DR No: {selectedOrder.dr_no || "--"}
-            </Typography>
-            <Box sx={{ mb: 1 }}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
-                <TextField
-                  label="To"
-                  select
-                  value={selectedOrder.approval_email_to || ""}
-                  onChange={(event) =>
-                    handleOrderUpdate(selectedOrder.id, { approval_email_to: event.target.value })
-                  }
-                  fullWidth
-                >
-                  <MenuItem value="">Select recipient</MenuItem>
-                  {savedEmailContacts.map((contact) => (
-                    <MenuItem key={contact.id} value={contact.email}>
-                      {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  label="CC"
-                  select
-                  value={selectedOrder.approval_email_cc || ""}
-                  onChange={(event) =>
-                    handleOrderUpdate(selectedOrder.id, { approval_email_cc: event.target.value })
-                  }
-                  fullWidth
-                >
-                  <MenuItem value="">Select CC recipient</MenuItem>
-                  {savedEmailContacts.map((contact) => (
-                    <MenuItem key={contact.id} value={contact.email}>
-                      {contact.name ? `${contact.name} / ${contact.email}` : contact.email}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Stack>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <Button variant="outlined" onClick={() => openEmailDialog("approval_email_to")}>
-                  Add New To Email
-                </Button>
-                <Button variant="outlined" onClick={() => openEmailDialog("approval_email_cc")}>
-                  Add New CC Email
-                </Button>
-                <Button variant="contained" onClick={() => generateApprovalEmail(selectedOrder)}>
-                  Generate Email Draft
-                </Button>
-              </Stack>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-
-      <Dialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Save Email Recipient</DialogTitle>
+      <Dialog open={Boolean(emailOrder)} onClose={() => setEmailOrder(null)} fullWidth maxWidth="md">
+        <DialogTitle>Send Order Email</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {savedEmailContacts.length === 0 && (
+              <Alert severity="info">Add order mail recipients in Admin Setup before sending emails.</Alert>
+            )}
             <TextField
-              label="Name"
-              value={emailForm.name}
-              onChange={(event) => setEmailForm((current) => ({ ...current, name: event.target.value }))}
+              label="Recipient"
+              select
+              value={selectedRecipient}
+              onChange={(event) => setSelectedRecipient(event.target.value)}
               fullWidth
+            >
+              <MenuItem value="">Select saved email</MenuItem>
+              {savedEmailContacts.map((contact) => (
+                <MenuItem key={contact.id} value={contact.email}>
+                  {contact.email}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Subject"
+              value={emailOrder ? buildPendingOrderEmailSubject(emailOrder) : ""}
+              fullWidth
+              InputProps={{ readOnly: true }}
             />
             <TextField
-              label="Email"
-              type="email"
-              value={emailForm.email}
-              onChange={(event) => setEmailForm((current) => ({ ...current, email: event.target.value }))}
+              label="Email Body"
+              value={emailOrder ? buildPendingOrderEmailBody(emailOrder) : ""}
               fullWidth
+              multiline
+              minRows={14}
+              InputProps={{ readOnly: true }}
             />
+            <Alert severity="info">
+              PDF attachment: {emailOrder?.ser_no || "Order"}.pdf
+            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEmailDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setEmailOrder(null)}>Cancel</Button>
           <Button
-            onClick={handleCreateSavedEmail}
+            onClick={() => setConfirmEmailOpen(true)}
             variant="contained"
-            disabled={!emailForm.email.trim()}
+            disabled={!selectedRecipient || savedEmailContacts.length === 0}
           >
-            Save Recipient
+            Send Email
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmEmailOpen} onClose={() => setConfirmEmailOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Confirm Email</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to send order {emailOrder?.ser_no} to {selectedRecipient}?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmEmailOpen(false)} disabled={sendingEmail}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleSendOrderEmail()} variant="contained" disabled={sendingEmail}>
+            {sendingEmail ? "Sending..." : "Yes, Send"}
           </Button>
         </DialogActions>
       </Dialog>
