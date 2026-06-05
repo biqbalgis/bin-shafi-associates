@@ -32,8 +32,10 @@ export default function DashboardPage() {
   const pendingCount = orders.filter((order) => order.status === "PENDING").length;
   const approvedCount = orders.filter((order) => order.status === "APPROVED").length;
   const completedCount = orders.filter((order) => order.status === "COMPLETED").length;
+  const canceledCount = orders.filter((order) => order.status === "CANCELED").length;
   const pendingOrders = orders.filter((order) => order.status === "PENDING").slice(0, 5);
   const approvedOrders = orders.filter((order) => order.status === "APPROVED").slice(0, 5);
+  const canceledOrders = orders.filter((order) => order.status === "CANCELED").slice(0, 5);
 
   return (
     <Stack spacing={3}>
@@ -42,7 +44,7 @@ export default function DashboardPage() {
           <Typography variant="overline" sx={{ opacity: 0.72, letterSpacing: "0.16em" }}>
             Daily Ops Snapshot
           </Typography>
-          <Typography variant="h3" sx={{ mt: 1, maxWidth: 680 }}>
+          <Typography variant="h6" sx={{ mt: 1, maxWidth: 1680 }}>
             Track aviation fuel demand, approvals, and profit closure without losing the order trail.
           </Typography>
           <Typography sx={{ mt: 1.5, opacity: 0.78 }}>
@@ -57,7 +59,7 @@ export default function DashboardPage() {
         sx={{
           display: "grid",
           gap: 2,
-          gridTemplateColumns: { xs: "1fr", md: "repeat(4, minmax(0, 1fr))" },
+          gridTemplateColumns: { xs: "1fr", md: "repeat(5, minmax(0, 1fr))" },
         }}
       >
         <Box>
@@ -71,6 +73,9 @@ export default function DashboardPage() {
         </Box>
         <Box>
           <DashboardStatCard label="Completed" value={completedCount} accent="#2e7d32" />
+        </Box>
+        <Box>
+          <DashboardStatCard label="Canceled" value={canceledCount} accent="#c62828" />
         </Box>
       </Box>
 
@@ -131,6 +136,30 @@ export default function DashboardPage() {
                 </List>
               </CardContent>
             </Card>
+            <Card>
+              <CardContent>
+                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                  <ReceiptLongRoundedIcon color="primary" />
+                  <Typography variant="h6">Canceled Orders</Typography>
+                </Stack>
+                <List disablePadding>
+                  {canceledOrders.length === 0 && (
+                    <ListItem disableGutters>
+                      <ListItemText primary="No canceled orders." />
+                    </ListItem>
+                  )}
+                  {canceledOrders.map((order) => (
+                    <ListItem key={order.id} disableGutters divider>
+                      <ListItemText
+                        primary={`${order.ser_no} / ${order.flight}`}
+                        secondary={`${order.client_name} / ${order.aircraft_registration} / ${new Date(order.date).toLocaleDateString()}`}
+                      />
+                      <OrderStatusChip status={order.status} />
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
           </Stack>
         </Box>
         <Box>
@@ -144,7 +173,10 @@ export default function DashboardPage() {
                   Pending approvals: {pendingCount}. Approved waiting on financial closure: {approvedCount}.
                 </Typography>
                 <Typography color="text.secondary">
-                  Completed orders: {completedCount}. Managers can update statuses, while admins finish DR and financial details.
+                  Completed orders: {completedCount}. Canceled orders: {canceledCount}.
+                </Typography>
+                <Typography color="text.secondary">
+                  Managers can update statuses, while admins finish DR and financial details.
                 </Typography>
                 <Typography color="text.secondary">
                   Financial access is restricted to admins and stays hidden from customer and manager order views.
