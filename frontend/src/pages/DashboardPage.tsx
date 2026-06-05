@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 
 import { listOrders } from "../api/orders";
 import { DashboardStatCard } from "../components/DashboardStatCard";
@@ -36,6 +37,7 @@ export default function DashboardPage() {
   const pendingOrders = orders.filter((order) => order.status === "PENDING").slice(0, 5);
   const approvedOrders = orders.filter((order) => order.status === "APPROVED").slice(0, 5);
   const canceledOrders = orders.filter((order) => order.status === "CANCELED").slice(0, 5);
+  const cardLinkSx = { color: "inherit", display: "block", height: "100%", textDecoration: "none" };
 
   return (
     <Stack spacing={3}>
@@ -62,19 +64,19 @@ export default function DashboardPage() {
           gridTemplateColumns: { xs: "1fr", md: "repeat(5, minmax(0, 1fr))" },
         }}
       >
-        <Box>
+        <Box component={RouterLink} to="/orders?scope=all" sx={cardLinkSx}>
           <DashboardStatCard label="Total Orders" value={orders.length} accent="#183153" />
         </Box>
-        <Box>
+        <Box component={RouterLink} to="/orders?scope=all&status=PENDING" sx={cardLinkSx}>
           <DashboardStatCard label="Pending" value={pendingCount} accent="#d88f14" />
         </Box>
-        <Box>
+        <Box component={RouterLink} to="/orders?scope=all&status=APPROVED" sx={cardLinkSx}>
           <DashboardStatCard label="Approved" value={approvedCount} accent="#1976d2" />
         </Box>
-        <Box>
+        <Box component={RouterLink} to="/orders?scope=completed&status=COMPLETED" sx={cardLinkSx}>
           <DashboardStatCard label="Completed" value={completedCount} accent="#2e7d32" />
         </Box>
-        <Box>
+        <Box component={RouterLink} to="/orders?scope=all&status=CANCELED" sx={cardLinkSx}>
           <DashboardStatCard label="Canceled" value={canceledCount} accent="#c62828" />
         </Box>
       </Box>

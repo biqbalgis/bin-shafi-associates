@@ -17,12 +17,23 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { listOrders, listSavedEmailContacts, sendOrderEmail, updateOrder } from "../api/orders";
 import OrdersTable from "../components/OrdersTable";
 import { useAuth } from "../context/AuthContext";
 import type { Order, OrderScope, OrderStatus, SavedEmailContact } from "../types";
+
+const orderStatuses: OrderStatus[] = ["PENDING", "APPROVED", "COMPLETED", "CANCELED"];
+const orderScopes: OrderScope[] = ["all", "active", "completed"];
+
+function getQueryStatus(value: string | null): OrderStatus | "" {
+  return orderStatuses.includes(value as OrderStatus) ? (value as OrderStatus) : "";
+}
+
+function getQueryScope(value: string | null, fallback: OrderScope): OrderScope {
+  return orderScopes.includes(value as OrderScope) ? (value as OrderScope) : fallback;
+}
 
 function buildPendingOrderEmailSubject(order: Order) {
   return `Pending fuel order ${order.ser_no} - ${order.client_name}`;
@@ -61,10 +72,13 @@ function buildPendingOrderEmailBody(order: Order) {
 
 export default function OrdersPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const queryString = searchParams.toString();
+  const defaultScope = user?.role === "CUSTOMER" ? "active" : "all";
   const [orders, setOrders] = useState<Order[]>([]);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<OrderStatus | "">("");
-  const [scope, setScope] = useState<OrderScope>(user?.role === "CUSTOMER" ? "active" : "all");
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [status, setStatus] = useState<OrderStatus | "">(() => getQueryStatus(searchParams.get("status")));
+  const [scope, setScope] = useState<OrderScope>(() => getQueryScope(searchParams.get("scope"), defaultScope));
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -73,6 +87,13 @@ export default function OrdersPage() {
   const [selectedRecipient, setSelectedRecipient] = useState("");
   const [confirmEmailOpen, setConfirmEmailOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams(queryString);
+    setSearch(nextParams.get("search") || "");
+    setStatus(getQueryStatus(nextParams.get("status")));
+    setScope(getQueryScope(nextParams.get("scope"), defaultScope));
+  }, [queryString, defaultScope]);
 
   useEffect(() => {
     if (user?.role === "CUSTOMER") {
