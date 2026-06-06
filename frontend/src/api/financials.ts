@@ -24,6 +24,12 @@ export type FinancialFilters = {
   ordering?: string;
 };
 
+export type FinancialInvoiceEmailPayload = {
+  to_email: string;
+  subject: string;
+  body: string;
+};
+
 function normalizePayload(payload: FinancialPayload) {
   return {
     ...payload,
@@ -53,6 +59,16 @@ export async function approveFinancial(id: number) {
 
 export async function generateInvoice(id: number) {
   const response = await apiClient.post<Financial>(`/financials/${id}/generate-invoice/`);
+  return response.data;
+}
+
+export async function sendFinancialInvoiceEmail(id: number, payload: FinancialInvoiceEmailPayload) {
+  const response = await apiClient.post<Financial>(`/financials/${id}/send-invoice-email/`, {
+    ...payload,
+    to_email: payload.to_email.trim(),
+    subject: payload.subject.trim(),
+    body: payload.body.trim(),
+  });
   return response.data;
 }
 

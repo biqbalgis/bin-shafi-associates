@@ -9,7 +9,8 @@ from rest_framework.response import Response
 from users.permissions import IsAdminRole
 
 from .models import CompanyProfile, Financial
-from .serializers import CompanyProfileSerializer, FinancialSerializer
+from .notifications import build_financial_invoice_body, build_financial_invoice_subject, send_financial_invoice_email
+from .serializers import CompanyProfileSerializer, FinancialInvoiceEmailSerializer, FinancialSerializer
 
 
 class FinancialFilter(filters.FilterSet):
@@ -54,6 +55,27 @@ class FinancialViewSet(viewsets.ModelViewSet):
         financial.mark_invoice_generated()
         serializer = self.get_serializer(financial)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"], url_path="send-invoice-email")
+    def send_invoice_email(self, request, pk=None):
+        financial = self.get_object()
+        serializer = FinancialInvoiceEmailSerializer(
+            data={
+                "to_email": request.data.get("to_email"),
+                "subject": request.data.get("subject") or build_financial_invoice_subject(financial),
+                "body": request.data.get("body") or build_financial_invoice_body(financial),
+            }
+        )
+        serializer.is_valid(raise_exception=True)
+        financial.mark_invoice_generated()
+        send_financial_invoice_email(
+            financial=financial,
+            to_email=serializer.validated_data["to_email"],
+            subject=serializer.validated_data["subject"],
+            body=serializer.validated_data["body"],
+        )
+        serializer = self.get_serializer(financial)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="unlock-invoice")
     def unlock_invoice(self, request, pk=None):

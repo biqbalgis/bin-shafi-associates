@@ -1,6 +1,8 @@
+import EmailRoundedIcon from "@mui/icons-material/EmailRounded";
 import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import {
+  Autocomplete,
   Alert,
   Box,
   Button,
@@ -19,10 +21,11 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { fetchCompanyProfile } from "../api/companyProfile";
-import { approveFinancial, createFinancial, generateInvoice, updateFinancial } from "../api/financials";
+import { approveFinancial, createFinancial, generateInvoice, sendFinancialInvoiceEmail, updateFinancial } from "../api/financials";
 import { fetchClients } from "../api/dropdowns";
 import { getOrder } from "../api/orders";
-import type { Client, CompanyProfile, Financial, Order } from "../types";
+import { listSavedEmailContacts } from "../api/orders";
+import type { Client, CompanyProfile, Financial, Order, SavedEmailContact } from "../types";
 
 type FinancialForm = {
   dr_no: string;
@@ -155,6 +158,29 @@ function buildInvoiceFields(order: Order, financial: Financial): InvoiceField[] 
   ];
 }
 
+function buildFinancialInvoiceEmailSubject(order: Order, financial: Financial) {
+  const invoiceNo = financial.bsa_invoice || generateBsaInvoice(order.ser_no, order.client_name, order.date);
+  return `Invoice PDF: ${invoiceNo}`;
+}
+
+function buildFinancialInvoiceEmailBody(order: Order, financial: Financial) {
+  const invoiceNo = financial.bsa_invoice || generateBsaInvoice(order.ser_no, order.client_name, order.date);
+  return [
+    "Please find the attached invoice PDF.",
+    "",
+    `Invoice No: ${invoiceNo}`,
+    `Invoice Date: ${formatDate(financial.approved_at || financial.updated_at || order.date)}`,
+    `Order No: ${order.ser_no}`,
+    `Client: ${order.client_name}`,
+    `DR No: ${financial.dr_no || order.dr_no || "--"}`,
+    `Quantity (Ltrs): ${formatMoney(order.quantity_ltrs)}`,
+    `Total Amount: ${formatMoney(financial.bsa_total_price)}`,
+    "",
+    "Regards,",
+    "Bin Shafi Aviation Fuel System",
+  ].join("\n");
+}
+
 async function loadImageAsDataUrl(path: string) {
   const response = await fetch(path);
   const blob = await response.blob();
@@ -193,6 +219,14 @@ export default function FinancialPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [savingFinancial, setSavingFinancial] = useState(false);
   const [invoiceActionLoading, setInvoiceActionLoading] = useState<"" | "approve" | "generate">("");
+  const [savedEmailContacts, setSavedEmailContacts] = useState<SavedEmailContact[]>([]);
+  const [invoiceEmailDialogOpen, setInvoiceEmailDialogOpen] = useState(false);
+  const [sendingInvoiceEmail, setSendingInvoiceEmail] = useState(false);
+  const [invoiceEmailPreview, setInvoiceEmailPreview] = useState({
+    to_email: "",
+    subject: "",
+    body: "",
+  });
   const [form, setForm] = useState<FinancialForm>(emptyForm);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -201,6 +235,12 @@ export default function FinancialPage() {
     fetchCompanyProfile()
       .then((payload) => setCompanyProfile(payload))
       .catch(() => setCompanyProfile(null));
+  }, []);
+
+  useEffect(() => {
+    listSavedEmailContacts()
+      .then((payload) => setSavedEmailContacts(payload))
+      .catch(() => setSavedEmailContacts([]));
   }, []);
 
   useEffect(() => {
@@ -274,6 +314,7 @@ export default function FinancialPage() {
     email: invoiceClient?.contact_email || "Email not configured",
   };
   const signatureImageSrc = companyProfile?.signature_image || "";
+  const invoiceAttachmentName = `${activeFinancial?.bsa_invoice || (order ? generateBsaInvoice(order.ser_no, order.client_name, order.date) : "invoice")}.pdf`;
 
   function syncFinancialState(response: Financial) {
     setSavedFinancial(response);
@@ -370,6 +411,42 @@ export default function FinancialPage() {
       setError("Unable to generate the invoice.");
     } finally {
       setInvoiceActionLoading("");
+    }
+  }
+
+  function openInvoiceEmailDialog() {
+    if (!order || !activeFinancial) {
+      return;
+    }
+    const defaultRecipient = invoiceClient?.contact_email || savedEmailContacts[0]?.email || "";
+    setError("");
+    setSuccess("");
+    setInvoiceEmailPreview({
+      to_email: defaultRecipient,
+      subject: buildFinancialInvoiceEmailSubject(order, activeFinancial),
+      body: buildFinancialInvoiceEmailBody(order, activeFinancial),
+    });
+    setInvoiceEmailDialogOpen(true);
+  }
+
+  async function handleSendInvoiceEmail() {
+    if (!order || !activeFinancial || !invoiceEmailPreview.to_email.trim()) {
+      setError("Select a receipt email before sending the invoice.");
+      return;
+    }
+
+    setSendingInvoiceEmail(true);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await sendFinancialInvoiceEmail(activeFinancial.id, invoiceEmailPreview);
+      syncFinancialState(response);
+      setSuccess(`Invoice email sent to ${invoiceEmailPreview.to_email}.`);
+      setInvoiceEmailDialogOpen(false);
+    } catch {
+      setError("Unable to send the invoice email.");
+    } finally {
+      setSendingInvoiceEmail(false);
     }
   }
 
@@ -672,6 +749,16 @@ export default function FinancialPage() {
                     {downloadingPdf ? "Generating PDF..." : "Download PDF"}
                   </Button>
                 )}
+                {canGenerateInvoice && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<EmailRoundedIcon />}
+                    onClick={openInvoiceEmailDialog}
+                    disabled={sendingInvoiceEmail || invoiceActionLoading === "generate"}
+                  >
+                    Email Invoice
+                  </Button>
+                )}
               </Stack>
             </Stack>
           </CardContent>
@@ -816,6 +903,71 @@ export default function FinancialPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setInvoicePreviewOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={invoiceEmailDialogOpen} onClose={() => setInvoiceEmailDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle>Send Invoice Email</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {savedEmailContacts.length === 0 && (
+              <Alert severity="info">No saved receipt emails found. Type the recipient address manually.</Alert>
+            )}
+            <Autocomplete
+              freeSolo
+              options={savedEmailContacts.map((contact) => contact.email)}
+              value={invoiceEmailPreview.to_email}
+              inputValue={invoiceEmailPreview.to_email}
+              onChange={(_event, newValue) => {
+                setInvoiceEmailPreview((current) => ({
+                  ...current,
+                  to_email: newValue || "",
+                }));
+              }}
+              onInputChange={(_event, newInputValue) => {
+                setInvoiceEmailPreview((current) => ({
+                  ...current,
+                  to_email: newInputValue,
+                }));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Receipt Email"
+                  type="email"
+                  helperText="Select a saved email or type a new address."
+                  fullWidth
+                />
+              )}
+            />
+            <TextField
+              label="Subject"
+              value={invoiceEmailPreview.subject}
+              onChange={(event) => setInvoiceEmailPreview((current) => ({ ...current, subject: event.target.value }))}
+              fullWidth
+            />
+            <TextField
+              label="Email Body"
+              value={invoiceEmailPreview.body}
+              onChange={(event) => setInvoiceEmailPreview((current) => ({ ...current, body: event.target.value }))}
+              fullWidth
+              multiline
+              minRows={14}
+            />
+            <Alert severity="info">PDF attachment: {invoiceAttachmentName}</Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInvoiceEmailDialogOpen(false)} disabled={sendingInvoiceEmail}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleSendInvoiceEmail()}
+            variant="contained"
+            disabled={sendingInvoiceEmail || !invoiceEmailPreview.to_email.trim()}
+          >
+            {sendingInvoiceEmail ? "Sending..." : "Send Email"}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

@@ -144,3 +144,9 @@ class FinancialSerializer(serializers.ModelSerializer):
         self._sync_order_dr_no(financial)
         self._sync_order_status(financial)
         return financial
+
+
+class FinancialInvoiceEmailSerializer(serializers.Serializer):
+    to_email = serializers.EmailField()
+    subject = serializers.CharField(max_length=255)
+    body = serializers.CharField()

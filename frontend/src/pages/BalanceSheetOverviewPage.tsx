@@ -226,7 +226,7 @@ export default function BalanceSheetOverviewPage() {
         <Box>
           <Typography variant="h4">Financial Overview</Typography>
           <Typography color="text.secondary">
-            Select any client to review invoice totals, paid amounts, payment dates, methods, and outstanding dues.
+            Select any client to review total amounts, paid amounts, payment dates, methods, and remaining dues.
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.5}>
@@ -248,7 +248,7 @@ export default function BalanceSheetOverviewPage() {
             <Box>
               <Typography variant="h6">All Clients Snapshot</Typography>
               <Typography color="text.secondary">
-                Compare billed, paid, and due totals across clients, then open one client's detailed statement below.
+                Compare each client's total amount, paid amount, and remaining amount, then open one client's detailed statement below.
               </Typography>
             </Box>
 
@@ -259,9 +259,9 @@ export default function BalanceSheetOverviewPage() {
                     <TableCell>Client</TableCell>
                     <TableCell align="right">Orders</TableCell>
                     <TableCell align="right">Completed</TableCell>
-                    <TableCell align="right">Billed</TableCell>
+                    <TableCell align="right">Total Amount</TableCell>
                     <TableCell align="right">Paid</TableCell>
-                    <TableCell align="right">Due</TableCell>
+                    <TableCell align="right">Remaining</TableCell>
                     <TableCell align="right">Action</TableCell>
                   </TableRow>
                 </TableHead>

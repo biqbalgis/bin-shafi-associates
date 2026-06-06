@@ -1,14 +1,17 @@
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from aircrafts.models import Aircraft
 from clients.models import Client
 from orders.models import Airport, FuelType, Order
 
 from .models import CompanyProfile, Financial
+from .views import FinancialViewSet
 
 
 class FinancialCalculationTests(TestCase):
@@ -75,6 +78,45 @@ class FinancialCalculationTests(TestCase):
         )
 
         self.assertEqual(financial.bsa_invoice, "EA-260501-1")
+
+    def test_send_invoice_email_marks_invoice_generated(self):
+        order = Order.objects.create(
+            date=date(2026, 5, 1),
+            flight="PK3",
+            client=self.client,
+            aircraft=self.aircraft,
+            airport=self.airport,
+            route="KHI-LHE",
+            fuel_type=self.fuel_type,
+            quantity_ltrs=Decimal("100.00"),
+            created_by=self.user,
+        )
+        financial = Financial.objects.create(
+            order=order,
+            dr_no="DR-3",
+            pso_rate=Decimal("10.00"),
+            bsa_rate=Decimal("12.00"),
+        )
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            f"/api/financials/{financial.id}/send-invoice-email/",
+            {
+                "to_email": "recipient@example.com",
+                "subject": "Invoice PDF",
+                "body": "Please find the attached invoice PDF.",
+            },
+            format="json",
+        )
+        force_authenticate(request, user=self.user)
+
+        with patch("financials.views.send_financial_invoice_email") as send_mock:
+            response = FinancialViewSet.as_view({"post": "send_invoice_email"})(request, pk=financial.id)
+
+        self.assertEqual(response.status_code, 200)
+        send_mock.assert_called_once()
+        financial.refresh_from_db()
+        self.assertIsNotNone(financial.invoice_generated_at)
 
 
 class CompanyProfileTests(TestCase):
