@@ -118,6 +118,36 @@ class FinancialCalculationTests(TestCase):
         financial.refresh_from_db()
         self.assertIsNotNone(financial.invoice_generated_at)
 
+    def test_generate_invoice_requires_approval(self):
+        order = Order.objects.create(
+            date=date(2026, 5, 1),
+            flight="PK4",
+            client=self.client,
+            aircraft=self.aircraft,
+            airport=self.airport,
+            route="KHI-LHE",
+            fuel_type=self.fuel_type,
+            quantity_ltrs=Decimal("100.00"),
+            created_by=self.user,
+        )
+        financial = Financial.objects.create(
+            order=order,
+            dr_no="DR-4",
+            pso_rate=Decimal("10.00"),
+            bsa_rate=Decimal("12.00"),
+        )
+
+        factory = APIRequestFactory()
+        request = factory.post(f"/api/financials/{financial.id}/generate-invoice/")
+        force_authenticate(request, user=self.user)
+
+        response = FinancialViewSet.as_view({"post": "generate_invoice"})(request, pk=financial.id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "Approve the invoice before generating it.")
+        financial.refresh_from_db()
+        self.assertIsNone(financial.invoice_generated_at)
+
 
 class CompanyProfileTests(TestCase):
     def test_company_profile_can_be_created_with_blank_defaults(self):

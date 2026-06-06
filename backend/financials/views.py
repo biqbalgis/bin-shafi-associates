@@ -52,6 +52,11 @@ class FinancialViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="generate-invoice")
     def generate_invoice(self, request, pk=None):
         financial = self.get_object()
+        if not financial.is_locked:
+            return Response(
+                {"detail": "Approve the invoice before generating it."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         financial.mark_invoice_generated()
         serializer = self.get_serializer(financial)
         return Response(serializer.data)

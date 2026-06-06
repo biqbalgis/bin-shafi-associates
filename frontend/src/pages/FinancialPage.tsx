@@ -730,10 +730,12 @@ export default function FinancialPage() {
                     variant="outlined"
                     startIcon={<ReceiptLongRoundedIcon />}
                     onClick={() => void handleGenerateInvoice()}
-                    disabled={invoicePreviewOpen || invoiceActionLoading === "generate" || isInvoiceGenerated}
+                    disabled={invoicePreviewOpen || invoiceActionLoading === "generate" || isInvoiceGenerated || !isInvoiceLocked}
                   >
                     {isInvoiceGenerated
                       ? "Invoice Generated"
+                      : !isInvoiceLocked
+                        ? "Approve to Generate"
                       : invoiceActionLoading === "generate"
                         ? "Generating..."
                         : "Generate Invoice"}
