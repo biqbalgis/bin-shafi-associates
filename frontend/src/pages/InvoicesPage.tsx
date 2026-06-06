@@ -23,6 +23,7 @@ import { Link } from "react-router-dom";
 
 import { fetchClients } from "../api/dropdowns";
 import { listFinancials } from "../api/financials";
+import { buildDateRange } from "../utils/dateFilters";
 import type { Client, Financial } from "../types";
 
 function formatDate(value: string | null | undefined) {
@@ -71,8 +72,9 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [client, setClient] = useState("");
   const [approvalStatus, setApprovalStatus] = useState<"" | "draft" | "approved">("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dayFilter, setDayFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -87,12 +89,12 @@ export default function InvoicesPage() {
       setLoading(true);
       setError("");
       try {
+        const dateRange = buildDateRange({ day: dayFilter, month: monthFilter, year: yearFilter });
         const payload = await listFinancials({
           search,
           client: client ? Number(client) : "",
           approvalStatus,
-          dateFrom,
-          dateTo,
+          ...dateRange,
           ordering: "-order__date",
         });
         setInvoices(payload);
@@ -104,7 +106,7 @@ export default function InvoicesPage() {
     }
 
     loadInvoices();
-  }, [approvalStatus, client, dateFrom, dateTo, search]);
+  }, [approvalStatus, client, dayFilter, monthFilter, yearFilter, search]);
 
   const sortedInvoices = [...invoices].sort((left, right) => {
     const leftOrderTime = new Date(left.order_date).getTime();
@@ -166,20 +168,46 @@ export default function InvoicesPage() {
                 <MenuItem value="approved">Approved</MenuItem>
               </TextField>
               <TextField
-                label="Date From"
+                label="Day"
                 type="date"
-                value={dateFrom}
-                onChange={(event) => setDateFrom(event.target.value)}
+                value={dayFilter}
+                onChange={(event) => {
+                  setDayFilter(event.target.value);
+                  if (event.target.value) {
+                    setMonthFilter("");
+                    setYearFilter("");
+                  }
+                }}
                 fullWidth
                 InputLabelProps={{ shrink: true }}
               />
               <TextField
-                label="Date To"
-                type="date"
-                value={dateTo}
-                onChange={(event) => setDateTo(event.target.value)}
+                label="Month"
+                type="month"
+                value={monthFilter}
+                onChange={(event) => {
+                  setMonthFilter(event.target.value);
+                  if (event.target.value) {
+                    setDayFilter("");
+                    setYearFilter("");
+                  }
+                }}
                 fullWidth
                 InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                label="Year"
+                type="number"
+                inputProps={{ min: 1900, max: 2100 }}
+                value={yearFilter}
+                onChange={(event) => {
+                  setYearFilter(event.target.value);
+                  if (event.target.value) {
+                    setDayFilter("");
+                    setMonthFilter("");
+                  }
+                }}
+                fullWidth
               />
             </Box>
           </Stack>

@@ -26,6 +26,7 @@ import { Link } from "react-router-dom";
 
 import { getClientStatement } from "../api/clients";
 import { fetchClients } from "../api/dropdowns";
+import { buildDateRange } from "../utils/dateFilters";
 import type { Client, ClientPaymentMethod, ClientStatement, ClientStatementPayment } from "../types";
 
 function parseAmount(value: string | number | null | undefined) {
@@ -140,6 +141,9 @@ export default function BalanceSheetOverviewPage() {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [statement, setStatement] = useState<ClientStatement | null>(null);
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<number | null>(null);
+  const [dayFilter, setDayFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [loadingClients, setLoadingClients] = useState(true);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [error, setError] = useState("");
@@ -195,10 +199,21 @@ export default function BalanceSheetOverviewPage() {
     [clients, selectedClientId],
   );
 
+  const invoiceDateRange = buildDateRange({ day: dayFilter, month: monthFilter, year: yearFilter });
   const invoices = statement?.invoices ?? [];
-  const paidInvoices = invoices.filter((invoice) => invoice.payment_status === "PAID").length;
-  const partiallyPaidInvoices = invoices.filter((invoice) => invoice.payment_status === "PARTIALLY_PAID").length;
-  const unpaidInvoices = invoices.filter((invoice) => invoice.payment_status === "UNPAID").length;
+  const filteredInvoices = useMemo(
+    () =>
+      invoices.filter((invoice) => {
+        if (!invoiceDateRange.dateFrom || !invoiceDateRange.dateTo) {
+          return true;
+        }
+        return invoice.order_date >= invoiceDateRange.dateFrom && invoice.order_date <= invoiceDateRange.dateTo;
+      }),
+    [invoiceDateRange.dateFrom, invoiceDateRange.dateTo, invoices],
+  );
+  const paidInvoices = filteredInvoices.filter((invoice) => invoice.payment_status === "PAID").length;
+  const partiallyPaidInvoices = filteredInvoices.filter((invoice) => invoice.payment_status === "PARTIALLY_PAID").length;
+  const unpaidInvoices = filteredInvoices.filter((invoice) => invoice.payment_status === "UNPAID").length;
   const clientSnapshotTotals = useMemo(
     () =>
       clients.reduce(
@@ -412,6 +427,57 @@ export default function BalanceSheetOverviewPage() {
               <Typography color="text.secondary">
                 Each completed order is treated as a client invoice. Expand a row to inspect payment date, method, reference, and notes.
               </Typography>
+              <Box
+                sx={{
+                  mt: 2,
+                  display: "grid",
+                  gap: 2,
+                  gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" },
+                }}
+              >
+                <TextField
+                  label="Day"
+                  type="date"
+                  value={dayFilter}
+                  onChange={(event) => {
+                    setDayFilter(event.target.value);
+                    if (event.target.value) {
+                      setMonthFilter("");
+                      setYearFilter("");
+                    }
+                  }}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+                <TextField
+                  label="Month"
+                  type="month"
+                  value={monthFilter}
+                  onChange={(event) => {
+                    setMonthFilter(event.target.value);
+                    if (event.target.value) {
+                      setDayFilter("");
+                      setYearFilter("");
+                    }
+                  }}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+                <TextField
+                  label="Year"
+                  type="number"
+                  inputProps={{ min: 1900, max: 2100 }}
+                  value={yearFilter}
+                  onChange={(event) => {
+                    setYearFilter(event.target.value);
+                    if (event.target.value) {
+                      setDayFilter("");
+                      setMonthFilter("");
+                    }
+                  }}
+                  fullWidth
+                />
+              </Box>
             </Box>
 
             <TableContainer>
@@ -430,14 +496,16 @@ export default function BalanceSheetOverviewPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {invoices.length === 0 && (
+                  {filteredInvoices.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={9} align="center">
-                        {loadingStatement ? "Loading invoice status..." : "No completed invoices found for this client."}
+                        {loadingStatement
+                          ? "Loading invoice status..."
+                          : "No completed invoices found for this client in the selected period."}
                       </TableCell>
                     </TableRow>
                   )}
-                  {invoices.map((invoice) => {
+                  {filteredInvoices.map((invoice) => {
                     const isExpanded = expandedInvoiceId === invoice.order_id;
                     return (
                       <Fragment key={invoice.order_id}>

@@ -22,6 +22,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { listOrders, listSavedEmailContacts, sendOrderEmail, updateOrder } from "../api/orders";
 import OrdersTable from "../components/OrdersTable";
 import { useAuth } from "../context/AuthContext";
+import { buildDateRange } from "../utils/dateFilters";
 import type { Order, OrderScope, OrderStatus, SavedEmailContact } from "../types";
 
 const orderStatuses: OrderStatus[] = ["PENDING", "APPROVED", "COMPLETED", "CANCELED"];
@@ -79,6 +80,9 @@ export default function OrdersPage() {
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
   const [status, setStatus] = useState<OrderStatus | "">(() => getQueryStatus(searchParams.get("status")));
   const [scope, setScope] = useState<OrderScope>(() => getQueryScope(searchParams.get("scope"), defaultScope));
+  const [dayFilter, setDayFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,7 +118,8 @@ export default function OrdersPage() {
     setLoading(true);
     setError("");
     try {
-      const payload = await listOrders({ search, status, scope });
+      const dateRange = buildDateRange({ day: dayFilter, month: monthFilter, year: yearFilter });
+      const payload = await listOrders({ search, status, scope, ...dateRange });
       setOrders(payload);
     } catch {
       setError("Unable to load orders.");
@@ -135,7 +140,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     loadOrders();
-  }, [search, status, scope]);
+  }, [search, status, scope, dayFilter, monthFilter, yearFilter]);
 
   useEffect(() => {
     if (user?.role && user.role !== "CUSTOMER") {
@@ -261,6 +266,56 @@ export default function OrdersPage() {
                 ))}
               </TextField>
             </Stack>
+            <Box
+              sx={{
+                display: "grid",
+                gap: 2,
+                gridTemplateColumns: { xs: "1fr", md: "repeat(3, minmax(0, 1fr))" },
+              }}
+            >
+              <TextField
+                label="Day"
+                type="date"
+                value={dayFilter}
+                onChange={(event) => {
+                  setDayFilter(event.target.value);
+                  if (event.target.value) {
+                    setMonthFilter("");
+                    setYearFilter("");
+                  }
+                }}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                label="Month"
+                type="month"
+                value={monthFilter}
+                onChange={(event) => {
+                  setMonthFilter(event.target.value);
+                  if (event.target.value) {
+                    setDayFilter("");
+                    setYearFilter("");
+                  }
+                }}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                label="Year"
+                type="number"
+                inputProps={{ min: 1900, max: 2100 }}
+                value={yearFilter}
+                onChange={(event) => {
+                  setYearFilter(event.target.value);
+                  if (event.target.value) {
+                    setDayFilter("");
+                    setMonthFilter("");
+                  }
+                }}
+                fullWidth
+              />
+            </Box>
           </Stack>
         </CardContent>
       </Card>

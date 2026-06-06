@@ -5,6 +5,8 @@ export type OrderFilters = {
   search?: string;
   status?: OrderStatus | "";
   scope?: OrderScope;
+  dateFrom?: string;
+  dateTo?: string;
 };
 
 export type OrderPayload = {
@@ -32,6 +34,8 @@ export async function listOrders(filters?: OrderFilters) {
       search: filters?.search || undefined,
       status: filters?.status || undefined,
       scope: filters?.scope || undefined,
+      date_from: filters?.dateFrom || undefined,
+      date_to: filters?.dateTo || undefined,
     },
   });
   return unwrapListResponse(response.data);
