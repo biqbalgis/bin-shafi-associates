@@ -206,7 +206,7 @@ export default function CreateOrderPage() {
     setError("");
     setSuccess("");
 
-    if (!form.flight || !form.flight_status || !form.aircraft || !form.airport || !form.route || !form.fuel_type || !form.quantity_ltrs) {
+    if (!form.flight || !form.flight_status || !form.airport || !form.route || !form.fuel_type || !form.quantity_ltrs) {
       setError("Complete all required fields before submitting.");
       return;
     }
@@ -217,7 +217,7 @@ export default function CreateOrderPage() {
         flight: form.flight,
         flight_status: form.flight_status,
         client: form.client ? Number(form.client) : undefined,
-        aircraft: Number(form.aircraft),
+        aircraft: form.aircraft ? Number(form.aircraft) : null,
         airport: Number(form.airport),
         route: form.route,
         fuel_type: Number(form.fuel_type),
@@ -438,10 +438,11 @@ export default function CreateOrderPage() {
                   onChange={(event) => setForm((current) => ({ ...current, aircraft: event.target.value }))}
                   fullWidth
                 >
+                  <MenuItem value="">None</MenuItem>
                   {aircrafts.length === 0 && <MenuItem disabled value="">No aircrafts available for selected client</MenuItem>}
                   {aircrafts.map((aircraft) => (
                     <MenuItem key={aircraft.id} value={aircraft.id}>
-                      {aircraft.registration_no} / {aircraft.aircraft_model}
+                      {aircraft.registration_no}
                     </MenuItem>
                   ))}
                 </TextField>

@@ -36,6 +36,8 @@ type FinancialForm = {
   bsa_invoice: string;
   bsa_rate: string;
   bsa_fueling_charges: string;
+  pso_gst_rate: string;
+  bsa_gst_rate: string;
 };
 
 type InvoiceField = {
@@ -56,6 +58,8 @@ const emptyForm: FinancialForm = {
   bsa_invoice: "",
   bsa_rate: "",
   bsa_fueling_charges: FIXED_FUELING_CHARGES,
+  pso_gst_rate: "",
+  bsa_gst_rate: "",
 };
 
 function formatDerivedAmount(value: number | null) {
@@ -99,11 +103,17 @@ function calculatePrice(rate: string, quantity: string | undefined) {
   return numericRate * numericQuantity;
 }
 
-function calculateGst(price: number | null) {
+function calculateGst(price: number | null, fuelingCharges: string, gstRate: string) {
   if (price === null) {
     return null;
   }
-  return price * 0.18;
+  const rate = parseNumeric(gstRate);
+  if (rate === null) {
+    return null;
+  }
+  const numericFuelingCharges = parseNumeric(fuelingCharges);
+  const taxableAmount = price + (numericFuelingCharges ?? 0);
+  return taxableAmount * (rate / 100);
 }
 
 function calculateTotal(price: number | null, fuelingCharges: string, gst: number | null) {
@@ -251,6 +261,7 @@ export default function FinancialPage() {
       .then((payload) => {
         setOrder(payload);
         setSavedFinancial(payload.financial);
+        const isInternational = payload.flight_status === "INTERNATIONAL";
         if (payload.financial) {
           setForm({
             dr_no: payload.financial.dr_no || payload.dr_no,
@@ -261,6 +272,8 @@ export default function FinancialPage() {
             bsa_invoice: payload.financial.bsa_invoice || generateBsaInvoice(payload.ser_no, payload.client_name, payload.date),
             bsa_rate: payload.financial.bsa_rate ?? "",
             bsa_fueling_charges: payload.financial.bsa_fueling_charges ?? FIXED_FUELING_CHARGES,
+            pso_gst_rate: payload.financial.pso_gst ?? (isInternational ? "0" : "18"),
+            bsa_gst_rate: payload.financial.bsa_gst ?? (isInternational ? "0" : "18"),
           });
         } else {
           setForm((current) => ({
@@ -269,6 +282,8 @@ export default function FinancialPage() {
             fueling_charges: FIXED_FUELING_CHARGES,
             bsa_invoice: generateBsaInvoice(payload.ser_no, payload.client_name, payload.date),
             bsa_fueling_charges: FIXED_FUELING_CHARGES,
+            pso_gst_rate: isInternational ? "0" : "18",
+            bsa_gst_rate: isInternational ? "0" : "18",
           }));
         }
       })
@@ -290,8 +305,8 @@ export default function FinancialPage() {
   const quantity = order?.quantity_ltrs;
   const psoPrice = calculatePrice(form.pso_rate, quantity);
   const bsaPrice = calculatePrice(form.bsa_rate, quantity);
-  const psoGst = calculateGst(psoPrice);
-  const bsaGst = calculateGst(bsaPrice);
+  const psoGst = calculateGst(psoPrice, form.fueling_charges, form.pso_gst_rate);
+  const bsaGst = calculateGst(bsaPrice, form.bsa_fueling_charges, form.bsa_gst_rate);
   const psoTotalPrice = calculateTotal(psoPrice, form.fueling_charges, psoGst);
   const bsaTotalPrice = calculateTotal(bsaPrice, form.bsa_fueling_charges, bsaGst);
   const profitPreview = ((bsaPrice ?? 0) - (psoPrice ?? 0)).toFixed(2);
@@ -326,9 +341,11 @@ export default function FinancialPage() {
       pso_invoice: response.pso_invoice || current.pso_invoice,
       pso_rate: response.pso_rate ?? "",
       fueling_charges: response.fueling_charges ?? FIXED_FUELING_CHARGES,
+      pso_gst_rate: response.pso_gst ?? (order?.flight_status === "INTERNATIONAL" ? "0" : "18"),
       bsa_invoice: response.bsa_invoice || current.bsa_invoice,
       bsa_rate: response.bsa_rate ?? "",
       bsa_fueling_charges: response.bsa_fueling_charges ?? FIXED_FUELING_CHARGES,
+      bsa_gst_rate: response.bsa_gst ?? (order?.flight_status === "INTERNATIONAL" ? "0" : "18"),
     }));
   }
 
@@ -338,12 +355,16 @@ export default function FinancialPage() {
     }
     setSavingFinancial(true);
     try {
+      const psoGstAmount = formatDerivedAmount(psoGst);
+      const bsaGstAmount = formatDerivedAmount(bsaGst);
       const payload = {
         order: order.id,
         ...form,
         bsa_invoice: generateBsaInvoice(order.ser_no, order.client_name, order.date),
         pso_price: formatDerivedAmount(psoPrice),
         bsa_price: formatDerivedAmount(bsaPrice),
+        pso_gst: psoGstAmount || null,
+        bsa_gst: bsaGstAmount || null,
       };
       const financialId = savedFinancial?.id ?? order.financial?.id;
       const response = financialId
@@ -643,10 +664,28 @@ export default function FinancialPage() {
                     <TextField label="PSO Price" value={formatDerivedAmount(psoPrice)} InputProps={{ readOnly: true }} fullWidth />
                   </Box>
                   <Box>
-                    <TextField label="Fueling Charges" value={form.fueling_charges} InputProps={{ readOnly: true }} fullWidth />
+                    <TextField
+                      label="Fueling Charges"
+                      type="number"
+                      value={form.fueling_charges}
+                      onChange={(event) => setForm((current) => ({ ...current, fueling_charges: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                    />
                   </Box>
                   <Box>
-                    <TextField label="PSO GST (18%)" value={formatDerivedAmount(psoGst)} InputProps={{ readOnly: true }} fullWidth />
+                    <TextField
+                      label="PSO GST Rate (%)"
+                      type="number"
+                      value={form.pso_gst_rate}
+                      onChange={(event) => setForm((current) => ({ ...current, pso_gst_rate: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                      inputProps={{ min: 0, max: 100, step: 0.01 }}
+                    />
+                  </Box>
+                  <Box>
+                    <TextField label="PSO GST" value={formatDerivedAmount(psoGst)} InputProps={{ readOnly: true }} fullWidth />
                   </Box>
                   <Box>
                     <TextField label="PSO Total Price" value={formatDerivedAmount(psoTotalPrice)} InputProps={{ readOnly: true }} fullWidth />
@@ -682,10 +721,28 @@ export default function FinancialPage() {
                     <TextField label="BSA Price" value={formatDerivedAmount(bsaPrice)} InputProps={{ readOnly: true }} fullWidth />
                   </Box>
                   <Box>
-                    <TextField label="BSA Fueling Charges" value={form.bsa_fueling_charges} InputProps={{ readOnly: true }} fullWidth />
+                    <TextField
+                      label="BSA Fueling Charges"
+                      type="number"
+                      value={form.bsa_fueling_charges}
+                      onChange={(event) => setForm((current) => ({ ...current, bsa_fueling_charges: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                    />
                   </Box>
                   <Box>
-                    <TextField label="BSA GST (18%)" value={formatDerivedAmount(bsaGst)} InputProps={{ readOnly: true }} fullWidth />
+                    <TextField
+                      label="BSA GST Rate (%)"
+                      type="number"
+                      value={form.bsa_gst_rate}
+                      onChange={(event) => setForm((current) => ({ ...current, bsa_gst_rate: event.target.value }))}
+                      fullWidth
+                      disabled={isInvoiceLocked}
+                      inputProps={{ min: 0, max: 100, step: 0.01 }}
+                    />
+                  </Box>
+                  <Box>
+                    <TextField label="BSA GST" value={formatDerivedAmount(bsaGst)} InputProps={{ readOnly: true }} fullWidth />
                   </Box>
                   <Box>
                     <TextField label="BSA Total Price" value={formatDerivedAmount(bsaTotalPrice)} InputProps={{ readOnly: true }} fullWidth />

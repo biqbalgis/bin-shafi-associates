@@ -93,6 +93,7 @@ class ClientSerializer(serializers.ModelSerializer):
     total_billed = serializers.SerializerMethodField()
     total_paid = serializers.SerializerMethodField()
     total_due = serializers.SerializerMethodField()
+    total_profit = serializers.SerializerMethodField()
 
     class Meta:
         model = Client
@@ -109,6 +110,7 @@ class ClientSerializer(serializers.ModelSerializer):
             "total_billed",
             "total_paid",
             "total_due",
+            "total_profit",
             "created_at",
             "updated_at",
         )
@@ -125,12 +127,16 @@ class ClientSerializer(serializers.ModelSerializer):
                 sum(((order.financial.bsa_total_price or Decimal("0.00")) for order in billed_orders), Decimal("0.00"))
             )
             total_paid = quantize_money(sum((payment.amount for payment in obj.payments.all()), Decimal("0.00")))
+            total_profit = quantize_money(
+                sum(((order.financial.profit or Decimal("0.00")) for order in billed_orders), Decimal("0.00"))
+            )
             cache = {
                 "total_orders": obj.orders.count(),
                 "completed_orders": completed_orders.count(),
                 "total_billed": total_billed,
                 "total_paid": total_paid,
                 "total_due": quantize_money(total_billed - total_paid),
+                "total_profit": total_profit,
             }
             obj._client_balance_cache = cache
         return cache[field_name]
@@ -149,6 +155,9 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def get_total_due(self, obj):
         return self._get_balance_value(obj, "total_due")
+
+    def get_total_profit(self, obj):
+        return self._get_balance_value(obj, "total_profit")
 
 
 class ClientStatementEntrySerializer(serializers.Serializer):

@@ -13,6 +13,8 @@ export type FinancialPayload = {
   bsa_rate: string;
   bsa_price: string;
   bsa_fueling_charges: string;
+  pso_gst: string | null;
+  bsa_gst: string | null;
 };
 
 export type FinancialFilters = {
@@ -36,9 +38,11 @@ function normalizePayload(payload: FinancialPayload) {
     pso_rate: payload.pso_rate || null,
     pso_price: payload.pso_price || null,
     fueling_charges: payload.fueling_charges || null,
+    pso_gst: payload.pso_gst || null,
     bsa_rate: payload.bsa_rate || null,
     bsa_price: payload.bsa_price || null,
     bsa_fueling_charges: payload.bsa_fueling_charges || null,
+    bsa_gst: payload.bsa_gst || null,
   };
 }
 
@@ -94,4 +98,9 @@ export async function listFinancials(filters?: FinancialFilters) {
     },
   });
   return unwrapListResponse(response.data);
+}
+
+export async function deleteFinancial(financialId: number) {
+  const response = await apiClient.delete<{ detail?: string }>(`/financials/${financialId}/`);
+  return response.data;
 }

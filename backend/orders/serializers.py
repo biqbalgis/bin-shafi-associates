@@ -89,7 +89,7 @@ class OrderSerializer(serializers.ModelSerializer):
     audit_logs = OrderStatusAuditLogSerializer(many=True, read_only=True)
     financial = serializers.SerializerMethodField()
     client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.filter(is_active=True), required=False)
-    aircraft = serializers.PrimaryKeyRelatedField(queryset=Aircraft.objects.filter(active=True))
+    aircraft = serializers.PrimaryKeyRelatedField(queryset=Aircraft.objects.filter(active=True), required=False, allow_null=True)
 
     class Meta:
         model = Order

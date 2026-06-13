@@ -33,6 +33,7 @@ export type Client = {
   total_billed: string;
   total_paid: string;
   total_due: string;
+  total_profit: string;
 };
 
 export type Aircraft = {

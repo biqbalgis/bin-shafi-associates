@@ -223,6 +223,7 @@ export default function BalanceSheetOverviewPage() {
           totalBilled: totals.totalBilled + parseAmount(client.total_billed),
           totalPaid: totals.totalPaid + parseAmount(client.total_paid),
           totalDue: totals.totalDue + parseAmount(client.total_due),
+          totalProfit: totals.totalProfit + parseAmount(client.total_profit),
         }),
         {
           totalOrders: 0,
@@ -230,6 +231,7 @@ export default function BalanceSheetOverviewPage() {
           totalBilled: 0,
           totalPaid: 0,
           totalDue: 0,
+          totalProfit: 0,
         },
       ),
     [clients],
@@ -263,7 +265,7 @@ export default function BalanceSheetOverviewPage() {
             <Box>
               <Typography variant="h6">All Clients Snapshot</Typography>
               <Typography color="text.secondary">
-                Compare each client's total amount, paid amount, and remaining amount, then open one client's detailed statement below.
+                Compare each client's total amount, paid amount, remaining amount, and profit, then open one client's detailed statement below.
               </Typography>
             </Box>
 
@@ -277,13 +279,14 @@ export default function BalanceSheetOverviewPage() {
                     <TableCell align="right">Total Amount</TableCell>
                     <TableCell align="right">Paid</TableCell>
                     <TableCell align="right">Remaining</TableCell>
+                    <TableCell align="right">Profit</TableCell>
                     <TableCell align="right">Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {clients.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} align="center">
+                      <TableCell colSpan={8} align="center">
                         {loadingClients ? "Loading clients..." : "No active clients found."}
                       </TableCell>
                     </TableRow>
@@ -301,6 +304,7 @@ export default function BalanceSheetOverviewPage() {
                       <TableCell align="right">{formatAmount(client.total_billed)}</TableCell>
                       <TableCell align="right">{formatAmount(client.total_paid)}</TableCell>
                       <TableCell align="right">{formatAmount(client.total_due)}</TableCell>
+                      <TableCell align="right">{formatAmount(client.total_profit)}</TableCell>
                       <TableCell align="right">
                         <Button size="small" variant={client.id === Number(selectedClientId) ? "contained" : "outlined"} onClick={() => setSelectedClientId(String(client.id))}>
                           {client.id === Number(selectedClientId) ? "Selected" : "Open"}
@@ -333,6 +337,7 @@ export default function BalanceSheetOverviewPage() {
                       <TableCell align="right">{formatAmount(clientSnapshotTotals.totalBilled)}</TableCell>
                       <TableCell align="right">{formatAmount(clientSnapshotTotals.totalPaid)}</TableCell>
                       <TableCell align="right">{formatAmount(clientSnapshotTotals.totalDue)}</TableCell>
+                      <TableCell align="right">{formatAmount(clientSnapshotTotals.totalProfit)}</TableCell>
                       <TableCell align="right" />
                     </TableRow>
                   </TableFooter>

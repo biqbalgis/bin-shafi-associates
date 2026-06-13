@@ -100,7 +100,7 @@ class Order(models.Model):
         default=FlightStatus.DOMESTIC,
     )
     client = models.ForeignKey("clients.Client", on_delete=models.PROTECT, related_name="orders")
-    aircraft = models.ForeignKey("aircrafts.Aircraft", on_delete=models.PROTECT, related_name="orders")
+    aircraft = models.ForeignKey("aircrafts.Aircraft", on_delete=models.SET_NULL, related_name="orders", null=True, blank=True)
     airport = models.ForeignKey(Airport, on_delete=models.PROTECT, related_name="orders")
     route = models.CharField(max_length=255)
     dr_no = models.CharField(max_length=100, blank=True)

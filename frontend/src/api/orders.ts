@@ -14,7 +14,7 @@ export type OrderPayload = {
   flight: string;
   flight_status: FlightStatus;
   client?: number;
-  aircraft: number;
+  aircraft: number | null;
   airport: number;
   route: string;
   fuel_type: number;
@@ -71,5 +71,10 @@ export async function listSavedEmailContacts() {
 
 export async function createSavedEmailContact(payload: { name?: string; email: string }) {
   const response = await apiClient.post<SavedEmailContact>("/saved-email-contacts/", payload);
+  return response.data;
+}
+
+export async function deleteOrder(orderId: number) {
+  const response = await apiClient.delete<{ detail?: string }>(`/orders/${orderId}/`);
   return response.data;
 }

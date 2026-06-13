@@ -4,6 +4,10 @@ import {
   Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   MenuItem,
   Stack,
@@ -32,8 +36,8 @@ import {
   fetchFuelTypes,
   fetchRouteOptions,
 } from "../api/dropdowns";
-import { listFinancials, unlockFinancial } from "../api/financials";
-import { createSavedEmailContact, listSavedEmailContacts } from "../api/orders";
+import { listFinancials, unlockFinancial, deleteFinancial } from "../api/financials";
+import { createSavedEmailContact, listSavedEmailContacts, deleteOrder, listOrders } from "../api/orders";
 import type {
   Aircraft,
   Airport,
@@ -45,6 +49,7 @@ import type {
   FuelType,
   RouteOption,
   SavedEmailContact,
+  Order,
 } from "../types";
 
 function SectionCard({
@@ -92,6 +97,12 @@ export default function AdminSetupPage() {
   const [savingOrderMail, setSavingOrderMail] = useState(false);
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [savingSignature, setSavingSignature] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [selectedDeleteOrderId, setSelectedDeleteOrderId] = useState("");
+  const [selectedDeleteFinancialId, setSelectedDeleteFinancialId] = useState("");
+  const [deleteOrderDialogOpen, setDeleteOrderDialogOpen] = useState(false);
+  const [deleteFinancialDialogOpen, setDeleteFinancialDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [clientForm, setClientForm] = useState({
     name: "",
@@ -136,6 +147,7 @@ export default function AdminSetupPage() {
         companyProfileData,
         approvedInvoicesData,
         savedEmailContactsData,
+        ordersData,
       ] =
         await Promise.all([
           fetchClients(),
@@ -148,6 +160,7 @@ export default function AdminSetupPage() {
           fetchCompanyProfile(),
           listFinancials({ approvalStatus: "approved" }),
           listSavedEmailContacts(),
+          listOrders({ scope: "all" }),
         ]);
 
       setClients(clientsData);
@@ -160,7 +173,20 @@ export default function AdminSetupPage() {
       setCompanyProfile(companyProfileData);
       setApprovedInvoices(approvedInvoicesData);
       setSavedEmailContacts(savedEmailContactsData);
+      setOrders(ordersData);
       setSelectedInvoiceId((current) => {
+        if (current && approvedInvoicesData.some((invoice) => String(invoice.id) === current)) {
+          return current;
+        }
+        return approvedInvoicesData[0] ? String(approvedInvoicesData[0].id) : "";
+      });
+      setSelectedDeleteOrderId((current) => {
+        if (current && ordersData.some((order) => String(order.id) === current)) {
+          return current;
+        }
+        return ordersData[0] ? String(ordersData[0].id) : "";
+      });
+      setSelectedDeleteFinancialId((current) => {
         if (current && approvedInvoicesData.some((invoice) => String(invoice.id) === current)) {
           return current;
         }
@@ -190,6 +216,42 @@ export default function AdminSetupPage() {
       setMessage({ type: "success", text: successText });
     } catch {
       setMessage({ type: "error", text: "Request failed. Check required fields and uniqueness." });
+    }
+  }
+
+  async function handleDeleteOrder() {
+    if (!selectedDeleteOrderId) {
+      return;
+    }
+    setDeleting(true);
+    setMessage(null);
+    try {
+      await deleteOrder(Number(selectedDeleteOrderId));
+      await reloadData();
+      setDeleteOrderDialogOpen(false);
+      setMessage({ type: "success", text: "Order deleted." });
+    } catch {
+      setMessage({ type: "error", text: "Unable to delete order." });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteInvoice() {
+    if (!selectedDeleteFinancialId) {
+      return;
+    }
+    setDeleting(true);
+    setMessage(null);
+    try {
+      await deleteFinancial(Number(selectedDeleteFinancialId));
+      await reloadData();
+      setDeleteFinancialDialogOpen(false);
+      setMessage({ type: "success", text: "Invoice deleted." });
+    } catch {
+      setMessage({ type: "error", text: "Unable to delete invoice." });
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -405,6 +467,104 @@ export default function AdminSetupPage() {
           </Stack>
         </Stack>
       </SectionCard>
+
+      <SectionCard title="Delete Order" description="Permanently remove an order and its related financials.">
+        <Stack spacing={2}>
+          <TextField
+            label="Order"
+            select
+            value={selectedDeleteOrderId}
+            onChange={(e) => setSelectedDeleteOrderId(e.target.value)}
+            fullWidth
+          >
+            {orders.length === 0 && <MenuItem value="">No orders</MenuItem>}
+            {orders.map((order) => (
+              <MenuItem key={order.id} value={order.id}>
+                {order.ser_no} / {order.client_name} / {order.date}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="body2" color="text.secondary">
+            {selectedDeleteOrderId
+              ? `Selected order will be permanently deleted.`
+              : "Select an order to delete."}
+          </Typography>
+          <Stack direction="row" justifyContent="flex-end">
+            <Button
+              variant="outlined"
+              color="error"
+              disabled={!selectedDeleteOrderId || deleting}
+              onClick={() => setDeleteOrderDialogOpen(true)}
+            >
+              Delete Order
+            </Button>
+          </Stack>
+        </Stack>
+      </SectionCard>
+
+      <SectionCard title="Delete Invoice" description="Permanently remove an approved invoice.">
+        <Stack spacing={2}>
+          <TextField
+            label="Approved Invoice"
+            select
+            value={selectedDeleteFinancialId}
+            onChange={(e) => setSelectedDeleteFinancialId(e.target.value)}
+            fullWidth
+          >
+            {approvedInvoices.length === 0 && <MenuItem value="">No approved invoices</MenuItem>}
+            {approvedInvoices.map((invoice) => (
+              <MenuItem key={invoice.id} value={invoice.id}>
+                {invoice.bsa_invoice} / {invoice.client_name} / {invoice.order_ser_no}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="body2" color="text.secondary">
+            {selectedDeleteFinancialId
+              ? `Selected invoice will be permanently deleted.`
+              : "Select an invoice to delete."}
+          </Typography>
+          <Stack direction="row" justifyContent="flex-end">
+            <Button
+              variant="outlined"
+              color="error"
+              disabled={!selectedDeleteFinancialId || deleting}
+              onClick={() => setDeleteFinancialDialogOpen(true)}
+            >
+              Delete Invoice
+            </Button>
+          </Stack>
+        </Stack>
+      </SectionCard>
+
+      <Dialog open={deleteOrderDialogOpen} onClose={() => setDeleteOrderDialogOpen(false)}>
+        <DialogTitle>Delete Order</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to delete this order? This action cannot be undone.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteOrderDialogOpen(false)} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleDeleteOrder()} color="error" disabled={deleting}>
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={deleteFinancialDialogOpen} onClose={() => setDeleteFinancialDialogOpen(false)}>
+        <DialogTitle>Delete Invoice</DialogTitle>
+        <DialogContent>
+          <Typography>Are you sure you want to delete this invoice? This action cannot be undone.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteFinancialDialogOpen(false)} disabled={deleting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleDeleteInvoice()} color="error" disabled={deleting}>
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <SectionCard title="Order Mail" description="Save recipient emails used when sending pending order details.">
         <Stack spacing={2}>
